@@ -525,7 +525,14 @@ function MoodTab({records,tagConf,onUpdate}) {
     if(empty)delete nx[curDate];else nx[curDate]=next;
     onUpdate(nx);
   };
-  const toggleTag=id=>{const cur=rec.tags||[];patch({tags:cur.includes(id)?cur.filter(t=>t!==id):[...cur,id]});};
+  // タグは {id,name} で焼き込み保存（旧形式=ID文字列とも互換）
+  const tagId=t=>typeof t==="string"?t:t.id;
+  const isTagOn=id=>(rec.tags||[]).some(t=>tagId(t)===id);
+  const toggleTag=tag=>{
+    const cur=rec.tags||[];
+    const on=cur.some(t=>tagId(t)===tag.id);
+    patch({tags:on?cur.filter(t=>tagId(t)!==tag.id):[...cur,{id:tag.id,name:tag.name}]});
+  };
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay}/>
@@ -550,8 +557,8 @@ function MoodTab({records,tagConf,onUpdate}) {
         {tags.length===0
           ?<p style={{fontSize:11,color:"rgba(0,0,0,0.3)"}}>設定からタグを追加できます</p>
           :<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {tags.map(t=>{const on=(rec.tags||[]).includes(t.id);return(
-              <button key={t.id} onClick={()=>toggleTag(t.id)}
+            {tags.map(t=>{const on=isTagOn(t.id);return(
+              <button key={t.id} onClick={()=>toggleTag(t)}
                 style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
                   background:on?"#f5e9b8":"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
                 {t.name}
@@ -620,7 +627,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
         if(mood){
           const allTags=tagConf?.tags||[];
           if(mood.mood!=null)moodItems.push({t:null,label:`気分: ${MOOD_LABELS[mood.mood]}`,color:MOOD_COLORS[mood.mood],sub:""});
-          const tagNames=(mood.tags||[]).map(id=>(allTags.find(t=>t.id===id)||{}).name).filter(Boolean);
+          const tagNames=(mood.tags||[]).map(t=>typeof t==="string"?((allTags.find(x=>x.id===t)||{}).name):t.name).filter(Boolean);
           if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#f5e9b8",sub:tagNames.join("・")});
           if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
           if(mood.condition!=null)moodItems.push({t:null,label:"体調",color:"#cfe0f2",sub:RATING_LABELS[mood.condition-1]});
