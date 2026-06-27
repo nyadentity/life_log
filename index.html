@@ -461,23 +461,38 @@ function MemoTab({records,onUpdate}) {
         </div>
       </div></div>
       {sorted.map(e=>(
-        <div key={e.id} style={card}><div style={{padding:"12px 16px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-            <div style={{width:4,height:20,borderRadius:2,background:CAT.memo.color,flexShrink:0}}/>
-            <TimeCell iso={e.time} color={CAT.memo.color} dim={CAT.memo.dim} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
-          </div>
-          <MemoText key={e.id+curDate} text={e.text} onChange={t=>updTxt(e.id,t)}/>
-        </div></div>
+        <MemoCard key={e.id+curDate} entry={e} curDate={curDate}
+          onTime={hm=>updT(e.id,hm)} onSaveText={t=>updTxt(e.id,t)} onDelete={()=>rem(e.id)}/>
       ))}
     </div>
   );
 }
-function MemoText({text,onChange}) {
+function MemoCard({entry,curDate,onTime,onSaveText,onDelete}) {
+  const[editing,setEditing]=useState(false);
   const ref=useRef(null);
+  useEffect(()=>{if(editing&&ref.current)ref.current.focus();},[editing]);
+  const save=()=>{const v=ref.current?.value??entry.text;onSaveText(v);setEditing(false);};
   return(
-    <textarea ref={ref} defaultValue={text||""} rows={2}
-      onBlur={e=>onChange(e.target.value)}
-      style={{width:"100%",border:"none",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.65)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",paddingLeft:12}}/>
+    <div style={card}><div style={{padding:"12px 16px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <div style={{width:4,height:20,borderRadius:2,background:CAT.memo.color,flexShrink:0}}/>
+        <div style={{flex:1}}><TimeCell iso={entry.time} color={CAT.memo.color} dim={CAT.memo.dim} showRemove={false} onUpdate={onTime} onRemove={()=>{}}/></div>
+        {!editing&&<button onClick={()=>setEditing(true)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>}
+      </div>
+      {editing?(
+        <div>
+          <textarea ref={ref} defaultValue={entry.text||""} rows={3}
+            style={{width:"100%",border:"none",borderBottom:"1px solid rgba(0,0,0,0.1)",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.7)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",paddingBottom:8,marginBottom:12}}/>
+          <div style={{display:"flex",gap:8}}>
+            <button onMouseDown={e=>e.preventDefault()} onClick={onDelete} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+            <button onMouseDown={e=>{e.preventDefault();setEditing(false);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+            <button onMouseDown={e=>{e.preventDefault();save();}} style={{...smBtn(CAT.memo.color),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+          </div>
+        </div>
+      ):(
+        <p style={{fontSize:13,color:"rgba(0,0,0,0.65)",lineHeight:1.6,whiteSpace:"pre-wrap",paddingLeft:12}}>{entry.text}</p>
+      )}
+    </div></div>
   );
 }
 
