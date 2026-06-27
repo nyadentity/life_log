@@ -44,7 +44,15 @@ const CAT = {
   meal:  { color:"#b8dda0", dim:"rgba(184,221,160,0.4)" },
   teeth: { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
   memo:  { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
+  mood:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
 };
+const MOOD_LABELS = ["最悪","悪い","ふつう","良い","最高"];
+const MOOD_COLORS = ["#f5c2c2","#fad9c0","#f5edc0","#d4ebc2","#b3d9ed"];
+const RATING_FIELDS = [
+  { key:"condition", label:"体調", color:"#cfe0f2" },
+  { key:"sleep",     label:"睡眠", color:"#ddd2f0" },
+];
+const RATING_LABELS = ["最悪","悪い","ふつう","良い","最高"];
 const MEAL_COLORS = {
   "朝食": { color:"#fbd5ac", dim:"rgba(251,213,172,0.4)" },
   "昼食": { color:"#cce9b8", dim:"rgba(204,233,184,0.4)" },
@@ -55,13 +63,13 @@ const MEAL_CATS = ["朝食","昼食","夕食","間食"];
 const FULLNESS_LABELS = ["少なめ","普通","多め","満腹","食べすぎ"];
 
 const SECONDARY_TABS = ["timeline","stats","settings"];
-const DEFAULT_TAB_ORDER = ["meal","med","bath","teeth","memo"];
+const DEFAULT_TAB_ORDER = ["meal","med","bath","teeth","mood","memo"];
 const TAB_LABELS = {
-  bath:"入浴", med:"服薬", meal:"食事", teeth:"歯磨き", memo:"行動",
+  bath:"入浴", med:"服薬", meal:"食事", teeth:"歯磨き", mood:"気分", memo:"行動",
   timeline:"履歴", stats:"統計", settings:"設定"
 };
 const DB_NAME = "daily-log";
-const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", memo:"memo_r", set:"app_s" };
+const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
 
 // ── IndexedDB ──────────────────────────────────────────────
 let _db = null;
@@ -124,6 +132,7 @@ const fmtMonth = ds => { const [y,m]=ds.split("-"); return `${y}年${+m}月`; };
 const normMed = m => typeof m==="string" ? {id:uid(),name:m} : m;
 function defaultMedConf() { return {slots:Object.fromEntries(SLOT_DEFS.map(s=>[s.id,{enabled:true,meds:[]}])),weeklyMeds:[]}; }
 function defaultTeethConf() { return {items:[{id:"b1",name:"歯ブラシ",color:"#f5e6b0"}]}; }
+function defaultTagConf() { return {tags:[]}; }
 function hexDim(hex,a=0.4){try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;}catch{return `rgba(200,200,200,${a})`;}}
 function dimY(y,m) { return new Date(+y,+m,0).getDate(); }
 function padDate(y,m,d) { return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
@@ -472,26 +481,129 @@ function MemoText({text,onChange}) {
   );
 }
 
+
+// ── 気分日記タブ ──────────────────────────────────────────
+// レコード形式: records[ds] = { mood:0-4|null, tags:[tagId...], diary:"", condition:1-5|null, sleep:1-5|null }
+function RatingCard({field,value,onChange}) {
+  const[open,setOpen]=useState(false);
+  return(
+    <div style={{...card,marginBottom:10}}>
+      <div style={{padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{field.label}</span>
+          {value!=null&&(
+            <span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.55)",background:field.color,borderRadius:14,padding:"3px 12px"}}>
+              {RATING_LABELS[value-1]}
+            </span>
+          )}
+          <button onClick={()=>setOpen(o=>!o)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+        </div>
+        {open&&(
+          <div style={{display:"flex",gap:4,marginTop:12}}>
+            {RATING_LABELS.map((lb,i)=>{const n=i+1;const on=value===n;return(
+              <button key={n} onClick={()=>{onChange(on?null:n);setOpen(false);}}
+                style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                  background:on?field.color:"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                {lb}
+              </button>
+            );})}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function MoodTab({records,tagConf,onUpdate}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay}=useDateNav(realToday);
+  const rec=records[curDate]||{};
+  const tags=tagConf?.tags||[];
+  const patch=p=>{
+    const next={...rec,...p};
+    const nx={...records};
+    const empty=next.mood==null&&!(next.tags||[]).length&&!(next.diary||"").trim()&&next.condition==null&&next.sleep==null;
+    if(empty)delete nx[curDate];else nx[curDate]=next;
+    onUpdate(nx);
+  };
+  const toggleTag=id=>{const cur=rec.tags||[];patch({tags:cur.includes(id)?cur.filter(t=>t!==id):[...cur,id]});};
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay}/>
+
+      {/* 今日の気分 */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 10px"}}>今日の気分</p>
+        <div style={{display:"flex",gap:4}}>
+          {MOOD_LABELS.map((lb,i)=>(
+            <button key={i} onClick={()=>patch({mood:rec.mood===i?null:i})}
+              style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                background:rec.mood===i?MOOD_COLORS[i]:"rgba(0,0,0,0.06)",color:rec.mood===i?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+              {lb}
+            </button>
+          ))}
+        </div>
+      </div></div>
+
+      {/* 出来事タグ */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 10px"}}>出来事タグ</p>
+        {tags.length===0
+          ?<p style={{fontSize:11,color:"rgba(0,0,0,0.3)"}}>設定からタグを追加できます</p>
+          :<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {tags.map(t=>{const on=(rec.tags||[]).includes(t.id);return(
+              <button key={t.id} onClick={()=>toggleTag(t.id)}
+                style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+                  background:on?"#f5e9b8":"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+                {t.name}
+              </button>
+            );})}
+          </div>}
+      </div></div>
+
+      {/* 日記 */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 8px"}}>日記</p>
+        <DiaryField key={curDate} value={rec.diary||""} onChange={v=>patch({diary:v})}/>
+      </div></div>
+
+      {/* 体調・睡眠 */}
+      {RATING_FIELDS.map(f=>(
+        <RatingCard key={f.key} field={f} value={rec[f.key]??null} onChange={v=>patch({[f.key]:v})}/>
+      ))}
+    </div>
+  );
+}
+function DiaryField({value,onChange}) {
+  const ref=useRef(null);
+  return(
+    <textarea ref={ref} defaultValue={value} rows={4} placeholder="今日の日記を自由に記入…"
+      onBlur={e=>onChange(e.target.value)}
+      style={{width:"100%",border:"none",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.7)",outline:"none",resize:"none",lineHeight:1.7,fontFamily:"inherit"}}/>
+  );
+}
+
 // ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
-function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR}) {
+function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
   const[search,setSearch]=useState("");
   const q=search.trim().toLowerCase();
-  const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR)])].sort((a,b)=>b.localeCompare(a));
+  const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
   const today=todayKey();
   const sortT=(a,b)=>!a.t&&!b.t?0:!a.t?1:!b.t?-1:a.t.localeCompare(b.t);
   const matchQ=it=>!q||(it.label||"").toLowerCase().includes(q)||(it.sub||"").toLowerCase().includes(q);
   return(
     <div style={{width:"100%",maxWidth:380}}>
-      <div style={{...card,marginBottom:10}}><div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.35)"}}>検索</span>
-        <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="キーワードで絞り込み"
-          style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
-        {search&&<button onClick={()=>setSearch("")} style={icoBtn}>✕</button>}
-      </div></div>
+      <div style={{...card,marginBottom:10}}>
+        <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.35)"}}>検索</span>
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="キーワードで絞り込み"
+            style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+          {search&&<button onClick={()=>setSearch("")} style={icoBtn}>✕</button>}
+        </div>
+      </div>
       {allKeys.length===0&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:32}}>まだ記録がありません</p>}
       {allKeys.map(ds=>{
-        const bath=bathR[ds]||[],med=medR[ds]||{},meal=mealR[ds]||[],teeth=teethR[ds],memo=memoR[ds]||[];
+        const bath=bathR[ds]||[],med=medR[ds]||{},meal=mealR[ds]||[],teeth=teethR[ds],memo=memoR[ds]||[],mood=moodR[ds]||null;
         const wd=dateWd(ds);
         const aS=SLOT_DEFS.filter(s=>medConf.slots[s.id]?.enabled);
         const dW=medConf.weeklyMeds.filter(wm=>wm.weekdays.includes(wd));
@@ -504,7 +616,18 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR}) {
         dW.forEach(wm=>{if(med[`w:${wm.id}`])medItems.push({t:med[`w:${wm.id}`],label:wm.name,color:WC,sub:""});});
         if(med.prn)medItems.push({t:null,label:"頓服",color:"#d0d0d0",sub:med.prn});
         const filteredMed=medItems.filter(matchQ).sort(sortT);
-        const groups=[{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
+        const moodItems=[];
+        if(mood){
+          const allTags=tagConf?.tags||[];
+          if(mood.mood!=null)moodItems.push({t:null,label:`気分: ${MOOD_LABELS[mood.mood]}`,color:MOOD_COLORS[mood.mood],sub:""});
+          const tagNames=(mood.tags||[]).map(id=>(allTags.find(t=>t.id===id)||{}).name).filter(Boolean);
+          if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#f5e9b8",sub:tagNames.join("・")});
+          if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
+          if(mood.condition!=null)moodItems.push({t:null,label:"体調",color:"#cfe0f2",sub:RATING_LABELS[mood.condition-1]});
+          if(mood.sleep!=null)moodItems.push({t:null,label:"睡眠",color:"#ddd2f0",sub:RATING_LABELS[mood.sleep-1]});
+        }
+        const filteredMood=moodItems.filter(matchQ);
+        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
         if(!groups.length)return null;
         return(
           <div key={ds} style={card}><div style={{padding:"12px 16px"}}>
@@ -644,7 +767,7 @@ function DailyCalChart({records,month}) {
 }
 
 // ── 統計タブ ──────────────────────────────────────────────
-function StatsTab({bathR,medR,medConf,mealR,teethR}) {
+function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
   const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
   const prev=()=>{const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));};
   const next=()=>{const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);};
@@ -657,6 +780,112 @@ function StatsTab({bathR,medR,medConf,mealR,teethR}) {
       <div style={card}><div style={{padding:"12px 16px"}}><MedTimingChart records={medR} config={medConf} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
       <div style={card}><div style={{padding:"12px 16px"}}><DailyCalChart records={mealR} month={month}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>気分</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MoodChart records={moodR}/></div></div>
+    </div>
+  );
+}
+
+
+// ── 統計：気分チャート（月／年トグル）─────────────────────
+function MoodChart({records}) {
+  const[range,setRange]=useState("month"); // "month" | "year"
+  const today=todayKey();
+  const curMonth=today.slice(0,7);
+  const curYear=today.slice(0,4);
+  const[month,setMonth]=useState(curMonth);
+  const[year,setYear]=useState(curYear);
+
+  // データ収集
+  let points=[]; // {x:0-based index, label, mood:0-4|null}
+  let xLabels=[];
+  if(range==="month"){
+    const[y,m]=month.split("-");const dim=dimY(y,m);
+    for(let d=1;d<=dim;d++){
+      const ds=padDate(y,+m,d);const r=records[ds];
+      points.push({i:d-1,mood:r&&r.mood!=null?r.mood:null,future:ds>today});
+    }
+    xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
+  }else{
+    for(let mo=1;mo<=12;mo++){
+      const mk=`${year}-${String(mo).padStart(2,"0")}`;
+      // その月の気分平均
+      const vals=Object.keys(records).filter(k=>k.startsWith(mk)&&records[k].mood!=null).map(k=>records[k].mood);
+      const avg=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null;
+      points.push({i:mo-1,mood:avg,future:mk>curMonth});
+    }
+    xLabels=["1月","6月","12月"];
+  }
+
+  const navPrev=()=>{
+    if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));}
+    else setYear(String(+year-1));
+  };
+  const navNext=()=>{
+    if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);}
+    else{const n=String(+year+1);if(n<=curYear)setYear(n);}
+  };
+  const atMax=range==="month"?month>=curMonth:year>=curYear;
+  const navLabel=range==="month"?fmtMonth(month):`${year}年`;
+
+  const has=points.some(p=>p.mood!=null);
+  const H=120,N=points.length;
+  // y: mood 0(最悪)→下, 4(最高)→上
+  const yOf=v=>H-8-(v/4)*(H-16);
+
+  return(
+    <div>
+      {/* トグル */}
+      <div style={{display:"flex",gap:4,marginBottom:10}}>
+        {[["month","月"],["year","年"]].map(([k,lb])=>(
+          <button key={k} onClick={()=>setRange(k)}
+            style={{flex:1,padding:"6px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
+              background:range===k?CAT.mood.color:"rgba(0,0,0,0.06)",color:range===k?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+            {lb}
+          </button>
+        ))}
+      </div>
+      {/* 期間ナビ */}
+      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:12}}>
+        <button onClick={navPrev} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:"pointer",color:"rgba(0,0,0,0.4)"}}>‹</button>
+        <span style={{flex:1,textAlign:"center",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.55)"}}>{navLabel}</span>
+        <button onClick={navNext} disabled={atMax} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:atMax?"default":"pointer",color:"rgba(0,0,0,0.4)",opacity:atMax?0.3:1}}>›</button>
+      </div>
+      {!has
+        ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
+        :<div style={{display:"flex"}}>
+          {/* y軸ラベル */}
+          <div style={{width:38,position:"relative",height:H,flexShrink:0}}>
+            {[4,3,2,1,0].map(v=>(
+              <div key={v} style={{position:"absolute",right:4,top:yOf(v),fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",whiteSpace:"nowrap"}}>{MOOD_LABELS[v]}</div>
+            ))}
+          </div>
+          <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
+            {[0,1,2,3,4].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
+            {/* 折れ線 */}
+            <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+              {(()=>{
+                const segs=[];let prev=null;
+                points.forEach(p=>{
+                  if(p.mood==null||p.future){prev=null;return;}
+                  const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.mood);
+                  if(prev)segs.push(<line key={p.i} x1={`${prev.x}%`} y1={prev.y} x2={`${x}%`} y2={y} stroke={CAT.mood.color} strokeWidth="2"/>);
+                  prev={x,y};
+                });
+                return segs;
+              })()}
+            </svg>
+            {points.map(p=>{
+              if(p.mood==null||p.future)return null;
+              const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.mood);
+              return<div key={p.i} style={{position:"absolute",left:`${x}%`,top:y,width:6,height:6,borderRadius:"50%",background:MOOD_COLORS[Math.round(p.mood)],transform:"translate(-50%,-50%)",border:"1px solid rgba(255,255,255,0.7)"}}/>;
+            })}
+            <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
+            <span style={{position:"absolute",bottom:-14,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{xLabels[1]}</span>
+            <span style={{position:"absolute",bottom:-14,right:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[2]}</span>
+          </div>
+        </div>}
+      <div style={{height:8}}/>
     </div>
   );
 }
@@ -807,8 +1036,51 @@ function TeethSettingsSection({conf,onConfChange}) {
   </>);
 }
 
+
+// ── 出来事タグ設定 ──────────────────────────────────────
+function TagSettingsSection({conf,onConfChange}) {
+  const[newName,setNewName]=useState("");
+  const[editId,setEditId]=useState(null);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
+  const tags=conf?.tags||[];
+  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,tags:[...tags,{id:uid(),name:n,color:"#f5e9b8"}]});setNewName("");};
+  const rem=id=>onConfChange({...conf,tags:tags.filter(t=>t.id!==id)});
+  const saveEdit=id=>{const n=(editRef.current?.value||"").trim();if(n)onConfChange({...conf,tags:tags.map(t=>t.id===id?{...t,name:n}:t)});setEditId(null);};
+  return(<>
+    {tags.map(tag=>(
+      <div key={tag.id} style={{...card,marginBottom:6}}>
+        {editId===tag.id?(
+          <div style={{padding:"12px 16px"}}>
+            <input ref={editRef} type="text" defaultValue={tag.name}
+              onKeyDown={e=>{if(e.key==="Enter")saveEdit(tag.id);}}
+              style={{...inp,marginBottom:12}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>{rem(tag.id);setEditId(null);}} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+              <button onMouseDown={e=>{e.preventDefault();saveEdit(tag.id);}} style={{...smBtn("#f5e9b8"),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+            </div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
+            <div style={{width:4,height:20,borderRadius:2,background:"#f5e9b8",flexShrink:0}}/>
+            <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{tag.name}</span>
+            <button onClick={()=>setEditId(tag.id)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+          </div>
+        )}
+      </div>
+    ))}
+    <div style={card}><div style={{padding:"10px 16px",display:"flex",gap:8,alignItems:"center"}}>
+      <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
+        placeholder="タグ名（例：通院、外出、来客）"
+        style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+      <button onClick={add} style={smBtn("#f5e9b8")}>追加</button>
+    </div></div>
+  </>);
+}
+
 // ── 設定タブ ──────────────────────────────────────────────
-function SettingsTab({tabOrder,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,allData,onImport,onDeleteAll}) {
+function SettingsTab({tabOrder,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll}) {
   const[confirmDel,setConfirmDel]=useState(false);
   const exp=()=>{const json=JSON.stringify({...allData,exportedAt:new Date().toISOString()},null,2);const fn=`lifelog-backup-${todayKey()}.json`;if(navigator.share){const f=new File([json],fn,{type:"application/json"});navigator.share({files:[f]}).catch(()=>{});return;}const a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);};
   return(
@@ -822,6 +1094,8 @@ function SettingsTab({tabOrder,hiddenTabs,onToggleHidden,medConfig,onMedConfigCh
           </div>
         </div>
       );})}
+      <p style={{...secLbl,marginTop:12}}>出来事タグ</p>
+      <TagSettingsSection conf={tagConf} onConfChange={onTagConfChange}/>
       <p style={{...secLbl,marginTop:12}}>歯磨きアイテム</p>
       <TeethSettingsSection conf={teethConf} onConfChange={onTeethConfChange}/>
       <p style={{...secLbl,marginTop:12}}>服薬設定</p>
@@ -851,6 +1125,8 @@ function App() {
   const[teethR,   setTeethR]   =useState({});
   const[teethConf,setTeethConf]=useState(defaultTeethConf);
   const[memoR,    setMemoR]    =useState({});
+  const[moodR,    setMoodR]    =useState({});
+  const[tagConf,  setTagConf]  =useState(defaultTagConf);
   const[tabOrder, setTabOrder] =useState(DEFAULT_TAB_ORDER);
   const[hiddenTabs,setHiddenTabs]=useState([]);
   // 初期タブは左端（DEFAULT_TAB_ORDER[0]）
@@ -860,15 +1136,17 @@ function App() {
   useEffect(()=>{
     (async()=>{
       await migrateMed();
-      const[br,mr,mc,mlr,tr,tc,mmr,as_]=await Promise.all([
+      const[br,mr,mc,mlr,tr,tc,mmr,mdr,tgc,as_]=await Promise.all([
         dbGet(K.bath),dbGet(K.med),dbGet(K.medC),
-        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.memo),dbGet(K.set),
+        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.memo),
+        dbGet(K.mood),dbGet(K.tagC),dbGet(K.set),
       ]);
       let conf=mc||defaultMedConf();const def=defaultMedConf();
       conf={...def,...conf,slots:{...def.slots,...conf.slots}};
       for(const sid of Object.keys(conf.slots))conf.slots[sid].meds=(conf.slots[sid].meds||[]).map(normMed);
-      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setMemoR(mmr||{});
+      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setMemoR(mmr||{});setMoodR(mdr||{});
       if(tc)setTeethConf(tc);
+      if(tgc)setTagConf(tgc);
       if(as_?.tabOrder){const p=as_.tabOrder.filter(t=>!SECONDARY_TABS.includes(t));const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));const merged=[...p,...missing];if(merged.length)setTabOrder(merged);}
       if(as_?.hiddenTabs)setHiddenTabs(as_.hiddenTabs.filter(t=>!SECONDARY_TABS.includes(t)));
       if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab))setTab(as_.lastTab);
@@ -883,6 +1161,8 @@ function App() {
   const saveTeeth =useCallback(async nx=>{setTeethR(nx);await dbSet(K.teeth,nx);},[]);
   const saveTeethC=useCallback(async nx=>{setTeethConf(nx);await dbSet(K.teethC,nx);},[]);
   const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
+  const saveMood  =useCallback(async nx=>{setMoodR(nx);await dbSet(K.mood,nx);},[]);
+  const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
   const saveSets  =useCallback(async patch=>{const cur=await dbGet(K.set)||{};await dbSet(K.set,{...cur,...patch});},[]);
 
   const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
@@ -898,17 +1178,19 @@ function App() {
     if(data.teeth_r!==undefined){setTeethR(data.teeth_r||{});await dbSet(K.teeth,data.teeth_r||{});}
     if(data.teeth_c!==undefined){setTeethConf(data.teeth_c||defaultTeethConf());await dbSet(K.teethC,data.teeth_c||defaultTeethConf());}
     if(data.memo_r!==undefined){setMemoR(data.memo_r||{});await dbSet(K.memo,data.memo_r||{});}
+    if(data.mood_r!==undefined){setMoodR(data.mood_r||{});await dbSet(K.mood,data.mood_r||{});}
+    if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
     if(data.med_r!==undefined){setMedR(data.med_r||{});await dbSet(K.med,data.med_r||{});}
     if(data.med_c!==undefined){let c=data.med_c||defaultMedConf();const df=defaultMedConf();c={...df,...c,slots:{...df.slots,...c.slots}};for(const sid of Object.keys(c.slots))c.slots[sid].meds=(c.slots[sid].meds||[]).map(normMed);setMedC(c);await dbSet(K.medC,c);}
   },[]);
-  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setMemoR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.memo,{})]);},[]); 
+  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
 
   if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
 
   const mainTabs=tabOrder.filter(t=>!hiddenTabs.includes(t));
   const isSecondary=SECONDARY_TABS.includes(tab);
   const activeTab=([...mainTabs,...SECONDARY_TABS]).includes(tab)?tab:(mainTabs[0]||"settings");
-  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,memo_r:memoR};
+  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
 
   // タイトルタップ：セカンダリタブからメインタブへ
   const handleTitleTap=()=>{if(isSecondary){const t=mainTabs.find(t=>t===tab)||mainTabs[0]||DEFAULT_TAB_ORDER[0];changeTab(t);}};
@@ -944,9 +1226,10 @@ function App() {
       {activeTab==="meal"     &&<MealTab     records={mealR}  onUpdate={saveMeal}/>}
       {activeTab==="teeth"    &&<TeethTab    records={teethR} teethConf={teethConf} onUpdate={saveTeeth}/>}
       {activeTab==="memo"     &&<MemoTab     records={memoR}  onUpdate={saveMemo}/>}
-      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR}/>}
-      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
+      {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf}/>}
+      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
     </div>
   );
 }
