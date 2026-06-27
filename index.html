@@ -858,6 +858,7 @@ function App() {
       if(tc)setTeethConf(tc);
       if(as_?.tabOrder){const p=as_.tabOrder.filter(t=>!SECONDARY_TABS.includes(t));const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));const merged=[...p,...missing];if(merged.length)setTabOrder(merged);}
       if(as_?.hiddenTabs)setHiddenTabs(as_.hiddenTabs.filter(t=>!SECONDARY_TABS.includes(t)));
+      if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab))setTab(as_.lastTab);
       setLoaded(true);
     })();
   },[]);
@@ -871,7 +872,7 @@ function App() {
   const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
   const saveSets  =useCallback(async patch=>{const cur=await dbGet(K.set)||{};await dbSet(K.set,{...cur,...patch});},[]);
 
-  const changeTab     =useCallback(t=>{setTab(t);},[]);
+  const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
   const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
 
   const medTake=useCallback((dk,sid)=>saveMed({...medR,[dk]:{...(medR[dk]||{}),[sid]:new Date().toISOString()}}),[medR,saveMed]);
