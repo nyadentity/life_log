@@ -1078,8 +1078,9 @@ function TagSettingsSection({conf,onConfChange}) {
   const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,tags:[...tags,{id:uid(),name:n,color:"#f5e9b8"}]});setNewName("");};
   const rem=id=>onConfChange({...conf,tags:tags.filter(t=>t.id!==id)});
   const saveEdit=id=>{const n=(editRef.current?.value||"").trim();if(n)onConfChange({...conf,tags:tags.map(t=>t.id===id?{...t,name:n}:t)});setEditId(null);};
+  const mv=(i,dir)=>{const a=[...tags],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onConfChange({...conf,tags:a});};
   return(<>
-    {tags.map(tag=>(
+    {tags.map((tag,i)=>(
       <div key={tag.id} style={{...card,marginBottom:6}}>
         {editId===tag.id?(
           <div style={{padding:"12px 16px"}}>
@@ -1093,9 +1094,11 @@ function TagSettingsSection({conf,onConfChange}) {
             </div>
           </div>
         ):(
-          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:8}}>
             <div style={{width:4,height:20,borderRadius:2,background:"#f5e9b8",flexShrink:0}}/>
             <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{tag.name}</span>
+            <button onClick={()=>mv(i,-1)} disabled={i===0} style={{...icoBtn,fontSize:16,opacity:i===0?0.2:1}}>▲</button>
+            <button onClick={()=>mv(i,1)} disabled={i===tags.length-1} style={{...icoBtn,fontSize:16,opacity:i===tags.length-1?0.2:1}}>▼</button>
             <button onClick={()=>setEditId(tag.id)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
           </div>
         )}
@@ -1111,16 +1114,19 @@ function TagSettingsSection({conf,onConfChange}) {
 }
 
 // ── 設定タブ ──────────────────────────────────────────────
-function SettingsTab({tabOrder,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll}) {
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll}) {
   const[confirmDel,setConfirmDel]=useState(false);
+  const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
   const exp=()=>{const json=JSON.stringify({...allData,exportedAt:new Date().toISOString()},null,2);const fn=`lifelog-backup-${todayKey()}.json`;if(navigator.share){const f=new File([json],fn,{type:"application/json"});navigator.share({files:[f]}).catch(()=>{});return;}const a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);};
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <p style={secLbl}>タブの表示</p>
-      {tabOrder.map(t=>{const hidden=hiddenTabs.includes(t);return(
+      {tabOrder.map((t,i)=>{const hidden=hiddenTabs.includes(t);return(
         <div key={t} style={{...card,marginBottom:6,opacity:hidden?0.5:1}}>
           <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
             <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{TAB_LABELS[t]}</span>
+            <button onClick={()=>mvTab(i,-1)} disabled={i===0} style={{...icoBtn,fontSize:16,opacity:i===0?0.2:1}}>▲</button>
+            <button onClick={()=>mvTab(i,1)} disabled={i===tabOrder.length-1} style={{...icoBtn,fontSize:16,opacity:i===tabOrder.length-1?0.2:1}}>▼</button>
             <button onClick={()=>onToggleHidden(t)} style={{...smBtn("rgba(0,0,0,0.06)"),fontSize:11,padding:"3px 9px",color:hidden?"rgba(0,0,0,0.35)":"rgba(0,0,0,0.45)"}}>{hidden?"表示する":"非表示"}</button>
           </div>
         </div>
@@ -1198,6 +1204,7 @@ function App() {
 
   const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
   const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
+  const changeTabOrder=useCallback(async o=>{setTabOrder(o);await saveSets({tabOrder:o});},[saveSets]);
 
   const medTake=useCallback((dk,sid)=>saveMed({...medR,[dk]:{...(medR[dk]||{}),[sid]:new Date().toISOString()}}),[medR,saveMed]);
   const medUpd=useCallback((dk,sid,val)=>{const nx=JSON.parse(JSON.stringify(medR));if(!nx[dk])nx[dk]={};if(sid==="prn"){if(val)nx[dk][sid]=val;else delete nx[dk][sid];}else nx[dk][sid]=hmIso(dk,val);if(!Object.keys(nx[dk]).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
@@ -1260,7 +1267,7 @@ function App() {
       {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood}/>}
       {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf}/>}
       {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
     </div>
   );
 }
