@@ -320,10 +320,12 @@ function MealTab({records,onUpdate}) {
   const realToday=todayKey();
   const{curDate,prevDay,nextDay}=useDateNav(realToday);
   const[adding,setAdding]=useState(false);
+  const[editId,setEditId]=useState(null);
   const entries=records[curDate]||[];
   const add=e=>{onUpdate({...records,[curDate]:[...entries,e]});setAdding(false);};
+  const saveEdit=v=>{onUpdate({...records,[curDate]:entries.map(e=>e.id===editId?{...e,...v}:e)});setEditId(null);};
   const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
-  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
+  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);setEditId(null);};
   const sorted=[...entries].sort((a,b)=>a.time.localeCompare(b.time));
   const totalCal=entries.reduce((s,e)=>s+(e.calories||0),0);
   return(
@@ -332,13 +334,18 @@ function MealTab({records,onUpdate}) {
       {totalCal>0&&<div style={{...card,marginBottom:10}}><div style={{padding:"8px 16px",display:"flex",alignItems:"center"}}><span style={{fontSize:11,color:"rgba(0,0,0,0.33)",flex:1}}>本日合計</span><span style={{fontSize:14,fontWeight:700,color:"rgba(0,0,0,0.6)"}}>{totalCal.toLocaleString()} kcal</span></div></div>}
       {sorted.map(e=>{
         const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];
+        if(editId===e.id) return(
+          <MealForm key={e.id} initial={e} submitLabel="保存"
+            onSave={saveEdit} onCancel={()=>setEditId(null)} onDelete={()=>rem(e.id)}/>
+        );
         return(
           <div key={e.id} style={card}>
             <div style={{padding:"12px 16px"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
                 <div style={{width:4,height:20,borderRadius:2,background:c.color,flexShrink:0}}/>
                 <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)",flex:1}}>{e.category}</span>
-                <TimeCell iso={e.time} color={c.color} dim={c.dim} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
+                <TimeCell iso={e.time} color={c.color} dim={c.dim} showRemove={false} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
+                <button onClick={()=>setEditId(e.id)} style={{...smBtn(),fontSize:11,padding:"3px 8px",flexShrink:0}}>編集</button>
               </div>
               <div style={{display:"flex",gap:6,paddingLeft:16,flexWrap:"wrap",alignItems:"center"}}>
                 {e.calories!=null&&<span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.5)",background:c.dim,borderRadius:8,padding:"3px 8px"}}>{e.calories} kcal</span>}
@@ -349,15 +356,20 @@ function MealTab({records,onUpdate}) {
           </div>
         );
       })}
-      {adding?<MealAddForm onSave={add} onCancel={()=>setAdding(false)}/>:<button onClick={()=>setAdding(true)} style={addBtn}>＋ 食事を記録</button>}
+      {adding?<MealForm submitLabel="記録" onSave={add} onCancel={()=>setAdding(false)}/>:<button onClick={()=>setAdding(true)} style={addBtn}>＋ 食事を記録</button>}
     </div>
   );
 }
-function MealAddForm({onSave,onCancel}) {
-  const[cat,setCat]=useState("朝食");const[fullness,setFullness]=useState(null);
+function MealForm({initial,onSave,onCancel,onDelete,submitLabel="記録"}) {
+  const[cat,setCat]=useState(initial?.category||"朝食");
+  const[fullness,setFullness]=useState(initial?.fullness??null);
   const calRef=useRef(null),memoRef=useRef(null);
   const mc=MEAL_COLORS[cat]||MEAL_COLORS["その他"];
-  const save=()=>{const cal=calRef.current?.value?parseInt(calRef.current.value):null;onSave({id:uid(),time:new Date().toISOString(),category:cat,calories:cal||null,fullness,memo:memoRef.current?.value||""});};
+  const save=()=>{
+    const cal=calRef.current?.value?parseInt(calRef.current.value):null;
+    onSave({category:cat,calories:cal||null,fullness,memo:memoRef.current?.value||"",
+      ...(initial?{}:{id:uid(),time:new Date().toISOString()})});
+  };
   return(
     <div style={card}><div style={{padding:"14px 16px"}}>
       <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
@@ -365,17 +377,18 @@ function MealAddForm({onSave,onCancel}) {
       </div>
       <div style={{marginBottom:12}}>
         <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:4}}>カロリー（任意）</p>
-        <div style={{display:"flex",alignItems:"center",gap:4}}><input ref={calRef} type="number" min="0" max="9999" placeholder="0" style={{...inp,width:72,flex:"none"}}/><span style={{fontSize:11,color:"rgba(0,0,0,0.35)"}}>kcal</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><input ref={calRef} type="number" min="0" max="9999" placeholder="0" defaultValue={initial?.calories??""} style={{...inp,width:72,flex:"none"}}/><span style={{fontSize:11,color:"rgba(0,0,0,0.35)"}}>kcal</span></div>
       </div>
       <div style={{marginBottom:12}}>
         <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:6}}>満腹度（任意）</p>
         <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>setFullness(fullness===n?null:n)} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:fullness===n?mc.color:"rgba(0,0,0,0.06)",color:fullness===n?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>{n}</button>)}</div>
         {fullness&&<p style={{fontSize:10,color:"rgba(0,0,0,0.35)",marginTop:4,textAlign:"center"}}>{FULLNESS_LABELS[fullness-1]}</p>}
       </div>
-      <textarea ref={memoRef} rows={2} placeholder="メモ（任意）" style={{...inp,resize:"none",lineHeight:1.6,marginBottom:12}}/>
+      <textarea ref={memoRef} rows={2} placeholder="メモ（任意）" defaultValue={initial?.memo||""} style={{...inp,resize:"none",lineHeight:1.6,marginBottom:12}}/>
       <div style={{display:"flex",gap:8}}>
+        {onDelete&&<button onClick={onDelete} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:12,color:"rgba(0,0,0,0.35)",padding:"8px 10px"}}>削除</button>}
         <button onClick={onCancel} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:12}}>キャンセル</button>
-        <button onClick={save} style={{...smBtn(mc.color),flex:2,padding:"8px 0",fontSize:12,fontWeight:700}}>記録</button>
+        <button onClick={save} style={{...smBtn(mc.color),flex:2,padding:"8px 0",fontSize:12,fontWeight:700}}>{submitLabel}</button>
       </div>
     </div></div>
   );
