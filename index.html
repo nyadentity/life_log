@@ -652,7 +652,27 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
   const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
   const today=todayKey();
   const sortT=(a,b)=>!a.t&&!b.t?0:!a.t?1:!b.t?-1:a.t.localeCompare(b.t);
-  const matchQ=it=>!q||(it.label||"").toLowerCase().includes(q)||(it.sub||"").toLowerCase().includes(q);
+  // 日付文字列が検索語にマッチするか（複数表記に対応）
+  const dateMatches=ds=>{
+    if(!q)return false;
+    const[y,m,d]=ds.split("-");
+    const mm=String(+m),dd=String(+d);
+    const wd=WDL[dateWd(ds)];
+    const forms=[
+      ds,                              // 2026-06-28
+      `${y}/${m}/${d}`,`${y}/${mm}/${dd}`,
+      `${m}/${d}`,`${mm}/${dd}`,        // 06/28, 6/28
+      `${m}-${d}`,`${mm}-${dd}`,
+      `${mm}月${dd}日`,`${dd}日`,`${mm}月`,
+      `${y}年${mm}月${dd}日`,`${y}年`,`${y}年${mm}月`,
+      wd,`${wd}曜`,`${wd}曜日`,
+    ];
+    return forms.some(f=>f.toLowerCase().includes(q));
+  };
+  const matchItem=it=>(it.label||"").toLowerCase().includes(q)||(it.sub||"").toLowerCase().includes(q);
+  // 日付がヒットした日はその日の全項目を表示
+  let dayHit=false;
+  const matchQ=it=>!q||dayHit||matchItem(it);
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <div style={{...card,marginBottom:10}}>
@@ -666,6 +686,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
       </div>
       {allKeys.length===0&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:32}}>まだ記録がありません</p>}
       {allKeys.map(ds=>{
+        dayHit=dateMatches(ds);
         const bath=bathR[ds]||[],med=medR[ds]||{},meal=mealR[ds]||[],teeth=teethR[ds],memo=memoR[ds]||[],mood=moodR[ds]||null;
         const wd=dateWd(ds);
         const aS=SLOT_DEFS.filter(s=>medConf.slots[s.id]?.enabled);
@@ -844,62 +865,58 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
       <div style={card}><div style={{padding:"12px 16px"}}><MedTimingChart records={medR} config={medConf} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
       <div style={card}><div style={{padding:"12px 16px"}}><DailyCalChart records={mealR} month={month}/></div></div>
-      <p style={{...secLbl,marginTop:8}}>気分</p>
-      <div style={card}><div style={{padding:"12px 16px"}}><MoodChart records={moodR}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>気分・体調・睡眠</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MoodCombinedChart records={moodR}/></div></div>
     </div>
   );
 }
 
 
 // ── 統計：気分チャート（月／年トグル）─────────────────────
-function MoodChart({records}) {
-  const[range,setRange]=useState("month"); // "month" | "year"
+function MoodCombinedChart({records}) {
+  const[range,setRange]=useState("month");
   const today=todayKey();
   const curMonth=today.slice(0,7);
   const curYear=today.slice(0,4);
   const[month,setMonth]=useState(curMonth);
   const[year,setYear]=useState(curYear);
 
-  // データ収集
-  let points=[]; // {x:0-based index, label, mood:0-4|null}
-  let xLabels=[];
-  if(range==="month"){
-    const[y,m]=month.split("-");const dim=dimY(y,m);
-    for(let d=1;d<=dim;d++){
-      const ds=padDate(y,+m,d);const r=records[ds];
-      points.push({i:d-1,mood:r&&r.mood!=null?r.mood:null,future:ds>today});
-    }
-    xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
-  }else{
-    for(let mo=1;mo<=12;mo++){
-      const mk=`${year}-${String(mo).padStart(2,"0")}`;
-      // その月の気分平均
-      const vals=Object.keys(records).filter(k=>k.startsWith(mk)&&records[k].mood!=null).map(k=>records[k].mood);
-      const avg=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null;
-      points.push({i:mo-1,mood:avg,future:mk>curMonth});
-    }
-    xLabels=["1月","6月","12月"];
-  }
+  // 3系列：気分(0-4→1-5換算)、体調(1-5)、睡眠(1-5)
+  const SERIES=[
+    { key:"mood",      label:"気分", color:CAT.mood.color, get:r=>r.mood!=null?r.mood+1:null },
+    { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
+    { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
+  ];
+  const levels=5;
 
-  const navPrev=()=>{
-    if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));}
-    else setYear(String(+year-1));
+  // 各系列のポイント配列を構築
+  let N=0;let xLabels=[];
+  const buildSeries=getV=>{
+    const pts=[];
+    if(range==="month"){
+      const[y,m]=month.split("-");const dim=dimY(y,m);N=dim;
+      for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);const r=records[ds];pts.push({i:d-1,v:r?getV(r):null,future:ds>today});}
+      xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
+    }else{
+      N=12;
+      for(let mo=1;mo<=12;mo++){const mk=`${year}-${String(mo).padStart(2,"0")}`;const vals=Object.keys(records).filter(k=>k.startsWith(mk)).map(k=>getV(records[k])).filter(v=>v!=null);const avg=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null;pts.push({i:mo-1,v:avg,future:mk>curMonth});}
+      xLabels=["1月","6月","12月"];
+    }
+    return pts;
   };
-  const navNext=()=>{
-    if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);}
-    else{const n=String(+year+1);if(n<=curYear)setYear(n);}
-  };
+  const seriesData=SERIES.map(s=>({...s,pts:buildSeries(s.get)}));
+
+  const navPrev=()=>{if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));}else setYear(String(+year-1));};
+  const navNext=()=>{if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);}else{const n=String(+year+1);if(n<=curYear)setYear(n);}};
   const atMax=range==="month"?month>=curMonth:year>=curYear;
   const navLabel=range==="month"?fmtMonth(month):`${year}年`;
 
-  const has=points.some(p=>p.mood!=null);
-  const H=120,N=points.length;
-  // y: mood 0(最悪)→下, 4(最高)→上
-  const yOf=v=>H-8-(v/4)*(H-16);
+  const has=seriesData.some(s=>s.pts.some(p=>p.v!=null&&!p.future));
+  const H=130;
+  const yOf=v=>H-8-((v-1)/(levels-1))*(H-16);
 
   return(
     <div>
-      {/* トグル */}
       <div style={{display:"flex",gap:4,marginBottom:10}}>
         {[["month","月"],["year","年"]].map(([k,lb])=>(
           <button key={k} onClick={()=>setRange(k)}
@@ -909,41 +926,42 @@ function MoodChart({records}) {
           </button>
         ))}
       </div>
-      {/* 期間ナビ */}
       <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:12}}>
         <button onClick={navPrev} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:"pointer",color:"rgba(0,0,0,0.4)"}}>‹</button>
         <span style={{flex:1,textAlign:"center",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.55)"}}>{navLabel}</span>
         <button onClick={navNext} disabled={atMax} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:atMax?"default":"pointer",color:"rgba(0,0,0,0.4)",opacity:atMax?0.3:1}}>›</button>
       </div>
+      {/* 凡例 */}
+      <div style={{display:"flex",gap:12,marginBottom:8,justifyContent:"center"}}>
+        {SERIES.map(s=>(
+          <div key={s.key} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:14,height:3,borderRadius:2,background:s.color}}/>
+            <span style={{fontSize:10,color:"rgba(0,0,0,0.45)"}}>{s.label}</span>
+          </div>
+        ))}
+      </div>
       {!has
         ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
         :<div style={{display:"flex"}}>
-          {/* y軸ラベル */}
           <div style={{width:38,position:"relative",height:H,flexShrink:0}}>
-            {[4,3,2,1,0].map(v=>(
-              <div key={v} style={{position:"absolute",right:4,top:yOf(v),fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",whiteSpace:"nowrap"}}>{MOOD_LABELS[v]}</div>
+            {[5,4,3,2,1].map(v=>(
+              <div key={v} style={{position:"absolute",right:4,top:yOf(v),fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",whiteSpace:"nowrap"}}>{RATING_LABELS[v-1]}</div>
             ))}
           </div>
           <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
-            {[0,1,2,3,4].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
-            {/* 折れ線 */}
+            {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
             <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
-              {(()=>{
+              {seriesData.map(s=>{
                 const segs=[];let prev=null;
-                points.forEach(p=>{
-                  if(p.mood==null||p.future){prev=null;return;}
-                  const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.mood);
-                  if(prev)segs.push(<line key={p.i} x1={`${prev.x}%`} y1={prev.y} x2={`${x}%`} y2={y} stroke={CAT.mood.color} strokeWidth="2"/>);
+                s.pts.forEach(p=>{
+                  if(p.v==null||p.future){prev=null;return;}
+                  const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.v);
+                  if(prev)segs.push(<line key={s.key+"-"+p.i} x1={`${prev.x}%`} y1={prev.y} x2={`${x}%`} y2={y} stroke={s.color} strokeWidth="2" strokeLinecap="round"/>);
                   prev={x,y};
                 });
                 return segs;
-              })()}
+              })}
             </svg>
-            {points.map(p=>{
-              if(p.mood==null||p.future)return null;
-              const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.mood);
-              return<div key={p.i} style={{position:"absolute",left:`${x}%`,top:y,width:6,height:6,borderRadius:"50%",background:MOOD_COLORS[Math.round(p.mood)],transform:"translate(-50%,-50%)",border:"1px solid rgba(255,255,255,0.7)"}}/>;
-            })}
             <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
             <span style={{position:"absolute",bottom:-14,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{xLabels[1]}</span>
             <span style={{position:"absolute",bottom:-14,right:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[2]}</span>
