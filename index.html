@@ -660,7 +660,7 @@ function DiaryField({value,onChange}) {
 }
 
 // ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
-function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
+function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethConf}) {
   const[search,setSearch]=useState("");
   const q=search.trim().toLowerCase();
   const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
@@ -707,7 +707,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
         const dW=medConf.weeklyMeds.filter(wm=>wm.weekdays.includes(wd));
         const memoItems=memo.map(e=>({t:e.time,label:"メモ",color:CAT.memo.color,sub:e.text})).filter(matchQ).sort(sortT);
         const bathItems=bath.map(e=>({t:e.time,label:"入浴",color:CAT.bath.color,sub:e.memo})).filter(matchQ).sort(sortT);
-        const teethItems=(Array.isArray(teeth)?teeth:[]).map(e=>({t:e.time,label:e.itemName||"歯磨き",color:CAT.teeth.color,sub:""})).filter(matchQ).sort(sortT);
+        const teethItems=(Array.isArray(teeth)?teeth:[]).map(e=>{const it=(teethConf?.items||[]).find(x=>x.id===e.itemId);return{t:e.time,label:e.itemName||"歯磨き",color:(it&&it.color)||CAT.teeth.color,sub:""};}).filter(matchQ).sort(sortT);
         const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.fullness?FULLNESS_LABELS[e.fullness-1]:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
         const medItems=[];
         aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m).join("/")});});
@@ -739,13 +739,13 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
                 {gi>0&&<div style={{borderTop:"1px solid rgba(0,0,0,0.06)",margin:"6px 0"}}/>}
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {g.items.map((it,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{width:3,height:14,borderRadius:2,background:it.color,flexShrink:0}}/>
-                      <div style={{flex:1,minWidth:0}}>
-                        <span style={{fontSize:12,color:"rgba(0,0,0,0.55)"}}>{it.label}</span>
-                        {it.sub&&<span style={{fontSize:10,color:"rgba(0,0,0,0.3)",marginLeft:5}}>{it.sub}</span>}
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                      <div style={{width:3,height:18,borderRadius:2,background:it.color,flexShrink:0,alignSelf:"flex-start"}}/>
+                      <div style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:5}}>
+                        <span style={{fontSize:12,lineHeight:"18px",color:"rgba(0,0,0,0.55)",flexShrink:0}}>{it.label}</span>
+                        {it.sub&&<span style={{flex:1,minWidth:0,fontSize:10,lineHeight:"18px",color:"rgba(0,0,0,0.3)",wordBreak:"break-word"}}>{it.sub}</span>}
                       </div>
-                      {it.t&&<span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.4)",flexShrink:0}}>{isoHM(it.t)}</span>}
+                      {it.t&&<span style={{fontSize:11,lineHeight:"18px",fontWeight:600,color:"rgba(0,0,0,0.4)",flexShrink:0}}>{isoHM(it.t)}</span>}
                     </div>
                   ))}
                 </div>
@@ -1452,7 +1452,7 @@ function App() {
       {activeTab==="teeth"    &&<TeethTab    records={teethR} teethConf={teethConf} onUpdate={saveTeeth}/>}
       {activeTab==="memo"     &&<MemoTab     records={memoR}  onUpdate={saveMemo}/>}
       {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood}/>}
-      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
       {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
       {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
     </div>
