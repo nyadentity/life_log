@@ -124,6 +124,20 @@ async function migrateMed() {
 // ── ユーティリティ ─────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,9);
 // textarea を内容に合わせて自動で高さ調整
+// 点列[{x,y}]を滑らかな曲線パス(d属性)に変換（Catmull-Rom→ベジェ）
+function smoothPath(pts){
+  if(!pts.length)return"";
+  if(pts.length===1)return`M ${pts[0].x} ${pts[0].y}`;
+  let d=`M ${pts[0].x} ${pts[0].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const t=0.5;
+    const c1x=p1.x+(p2.x-p0.x)/6*t*2, c1y=p1.y+(p2.y-p0.y)/6*t*2;
+    const c2x=p2.x-(p3.x-p1.x)/6*t*2, c2y=p2.y-(p3.y-p1.y)/6*t*2;
+    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
 function hexA(hex,a){try{const h=hex.replace("#","");const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return `rgba(${r},${g},${b},${a})`;}catch{return hex;}}
 function fitTextarea(el){ if(!el) return; el.style.height="auto"; el.style.height=el.scrollHeight+"px"; }
 function useAutoGrow(deps=[]){
@@ -725,8 +739,8 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf}) {
                 {gi>0&&<div style={{borderTop:"1px solid rgba(0,0,0,0.06)",margin:"6px 0"}}/>}
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {g.items.map((it,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8}}>
-                      <div style={{width:3,height:16,marginTop:2,borderRadius:2,background:it.color,flexShrink:0}}/>
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:3,height:14,borderRadius:2,background:it.color,flexShrink:0}}/>
                       <div style={{flex:1,minWidth:0}}>
                         <span style={{fontSize:12,color:"rgba(0,0,0,0.55)"}}>{it.label}</span>
                         {it.sub&&<span style={{fontSize:10,color:"rgba(0,0,0,0.3)",marginLeft:5}}>{it.sub}</span>}
@@ -795,33 +809,59 @@ function MonthCalendar({month,bathR,teethR}) {
 // ── 統計：服薬チャート ─────────────────────────────────────
 function MedTimingChart({records,config,month}) {
   const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
-  const H=160,Y0=6,Y1=26,YR=Y1-Y0;const dots=[];
-  for(let day=1;day<=dim;day++){
-    const ds=padDate(y,+m,day);if(ds>today)continue;
-    const dr=records[ds]||{},wd=dateWd(ds);
-    SLOT_DEFS.forEach(s=>{if(!config.slots[s.id]?.enabled||!dr[s.id])return;const t=new Date(dr[s.id]);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;if(h>=Y0&&h<=Y1)dots.push({day,h,color:s.color});});
-    config.weeklyMeds.forEach(wm=>{if(!wm.weekdays.includes(wd)||!dr[`w:${wm.id}`])return;const t=new Date(dr[`w:${wm.id}`]);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;if(h>=Y0&&h<=Y1)dots.push({day,h,color:WC});});
-  }
+  const H=160,Y0=6,Y1=26,YR=Y1-Y0;
+  // 系列を構築：各スロット + 曜日薬
   const aSlots=SLOT_DEFS.filter(s=>config.slots[s.id]?.enabled);
+  const series=[
+    ...aSlots.map(s=>({key:s.id,label:s.label,color:s.color,weekly:false})),
+    ...config.weeklyMeds.map(wm=>({key:`w:${wm.id}`,label:wm.name,color:WC,weekly:true,weekdays:wm.weekdays})),
+  ];
+  // 各系列につき、日ごとの服用時刻（h）を集める
+  const toH=iso=>{const t=new Date(iso);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;return (h>=Y0&&h<=Y1)?h:null;};
+  const seriesData=series.map(s=>{
+    const pts=[];
+    for(let day=1;day<=dim;day++){
+      const ds=padDate(y,+m,day);
+      // 曜日薬は「服用対象の曜日」だけを対象日とする（非対象日は配列に入れず線を連続させる）
+      if(s.weekly&&!s.weekdays.includes(dateWd(ds)))continue;
+      if(ds>today){pts.push({day,h:null,future:true});continue;}
+      const dr=records[ds]||{};const iso=dr[s.key];
+      pts.push({day,h:iso?toH(iso):null});
+    }
+    return {...s,pts};
+  });
+  const has=seriesData.some(s=>s.pts.some(p=>p.h!=null));
   const ticks=[6,9,12,15,18,21,24];
-  if(!dots.length)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>今月の記録がありません</p>;
+  if(!has)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>今月の記録がありません</p>;
+  const xOf=day=>dim>1?((day-1)/(dim-1))*100:50;
+  const yOf=h=>((h-Y0)/YR)*100;
   return(
     <div>
       <div style={{display:"flex"}}>
         <div style={{width:28,position:"relative",height:H,flexShrink:0}}>
-          {ticks.map(h=><div key={h} style={{position:"absolute",right:4,top:`${(h-Y0)/YR*100}%`,fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",textAlign:"right",whiteSpace:"nowrap"}}>{h>=24?`${h-24}時`:`${h}時`}</div>)}
+          {ticks.map(h=><div key={h} style={{position:"absolute",right:4,top:`${yOf(h)}%`,fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",textAlign:"right",whiteSpace:"nowrap"}}>{h>=24?`${h-24}時`:`${h}時`}</div>)}
         </div>
         <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8,overflow:"hidden"}}>
-          {ticks.map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${(h-Y0)/YR*100}%`,height:1,background:"rgba(0,0,0,0.07)"}}/>)}
-          {dots.map((d,i)=><div key={i} style={{position:"absolute",left:`${(d.day-0.5)/dim*100}%`,top:`${(d.h-Y0)/YR*100}%`,width:7,height:7,borderRadius:"50%",background:d.color,transform:"translate(-50%,-50%)",opacity:0.85,border:"1px solid rgba(255,255,255,0.5)"}}/>)}
+          {ticks.map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${yOf(h)}%`,height:1,background:"rgba(0,0,0,0.07)"}}/>)}
+          <svg viewBox="0 0 100 100" style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+            {seriesData.map(s=>{
+              // 連続して記録のある区間ごとにパスを分割（途切れたら新しいパス）
+              const paths=[];let run=[];
+              const flush=()=>{if(run.length){paths.push(run);run=[];}};
+              s.pts.forEach(p=>{ if(p.h==null||p.future){flush();return;} run.push({x:xOf(p.day),y:yOf(p.h)}); });
+              flush();
+              return paths.map((pp,idx)=>(
+                <path key={s.key+"-"+idx} d={smoothPath(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+              ));
+            })}
+          </svg>
           <span style={{position:"absolute",bottom:2,left:2,fontSize:8,color:"rgba(0,0,0,0.25)"}}>1日</span>
           <span style={{position:"absolute",bottom:2,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{Math.round(dim/2)}日</span>
           <span style={{position:"absolute",bottom:2,right:2,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{dim}日</span>
         </div>
       </div>
       <div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}}>
-        {aSlots.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:7,height:7,borderRadius:"50%",background:s.color}}/><span style={{fontSize:9,color:"rgba(0,0,0,0.4)"}}>{s.label}</span></div>)}
-        {config.weeklyMeds.map(wm=><div key={wm.id} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:7,height:7,borderRadius:"50%",background:WC}}/><span style={{fontSize:9,color:"rgba(0,0,0,0.4)"}}>{wm.name}</span></div>)}
+        {series.map(s=><div key={s.key} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:14,height:3,borderRadius:2,background:s.color}}/><span style={{fontSize:9,color:"rgba(0,0,0,0.4)"}}>{s.label}</span></div>)}
       </div>
     </div>
   );
@@ -950,16 +990,15 @@ function MoodCombinedChart({records}) {
           </div>
           <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
             {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
-            <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+            <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
               {seriesData.map(s=>{
-                const segs=[];let prev=null;
-                s.pts.forEach(p=>{
-                  if(p.v==null||p.future){prev=null;return;}
-                  const x=N>1?(p.i/(N-1))*100:50;const y=yOf(p.v);
-                  if(prev)segs.push(<line key={s.key+"-"+p.i} x1={`${prev.x}%`} y1={prev.y} x2={`${x}%`} y2={y} stroke={s.color} strokeWidth="2" strokeLinecap="round"/>);
-                  prev={x,y};
-                });
-                return segs;
+                const paths=[];let run=[];
+                const flush=()=>{if(run.length){paths.push(run);run=[];}};
+                s.pts.forEach(p=>{ if(p.v==null||p.future){flush();return;} run.push({x:N>1?(p.i/(N-1))*100:50,y:yOf(p.v)}); });
+                flush();
+                return paths.map((pp,idx)=>(
+                  <path key={s.key+"-"+idx} d={smoothPath(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+                ));
               })}
             </svg>
             <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
