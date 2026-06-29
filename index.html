@@ -502,7 +502,7 @@ function MemoTab({records,onUpdate}) {
   const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
   const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
   const updTxt=(id,txt)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,text:txt}:e)});
-  const sorted=[...entries].sort((a,b)=>a.time.localeCompare(b.time));
+  const sorted=[...entries].sort((a,b)=>b.time.localeCompare(a.time));
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay}/>
