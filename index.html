@@ -1333,7 +1333,7 @@ function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medCon
       <div style={card}><div style={{padding:"14px 16px"}}>
         {confirmDel?<><p style={{fontSize:12,color:"rgba(0,0,0,0.55)",marginBottom:12}}>すべての記録・設定を削除します。この操作は取り消せません。</p><div style={{display:"flex",gap:8}}><button onClick={()=>setConfirmDel(false)} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:12}}>キャンセル</button><button onClick={()=>{onDeleteAll();setConfirmDel(false);}} style={{...smBtn("rgba(220,80,80,0.12)"),flex:1,padding:"9px 0",fontSize:12,color:"rgba(180,50,50,0.8)",fontWeight:700}}>削除する</button></div></>:<button onClick={()=>setConfirmDel(true)} style={{...smBtn("rgba(0,0,0,0.05)"),width:"100%",padding:"9px 0",fontSize:12,color:"rgba(0,0,0,0.38)"}}>すべてのデータを削除</button>}
       </div></div>
-      <p style={{textAlign:"center",fontSize:10,color:"rgba(0,0,0,0.28)",marginTop:16}}>ライフログ　バージョン {APP_VERSION}</p>
+      <p style={{textAlign:"center",fontSize:10,color:"rgba(0,0,0,0.28)",marginTop:16}}>バージョン {APP_VERSION}</p>
     </div>
   );
 }
