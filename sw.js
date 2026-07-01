@@ -1,6 +1,6 @@
 // ライフログ Service Worker
 // 更新時はこの APP_VERSION を上げる（キャッシュが総入れ替えされる）
-const APP_VERSION = "1";
+const APP_VERSION = "1.0";
 const CACHE = "lifelog-v" + APP_VERSION;
 const ASSETS = [
   "./",
