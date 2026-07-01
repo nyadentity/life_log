@@ -1,5 +1,7 @@
 // ライフログ Service Worker
-const CACHE = "lifelog-v1";
+// 更新時はこの APP_VERSION を上げる（キャッシュが総入れ替えされる）
+const APP_VERSION = "1";
+const CACHE = "lifelog-v" + APP_VERSION;
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,45 +11,46 @@ const ASSETS = [
   "./icon-512.png"
 ];
 
+// インストール：新バージョンの資産をプリキャッシュ（skipWaitingしない＝待機）
 self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
-  );
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
 });
 
+// 有効化：古いバージョンのキャッシュを削除
 self.addEventListener("activate", e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// network-first（HTML）/ cache-first（その他）。CDNスクリプトはネット優先でキャッシュ。
+// ページから SKIP_WAITING を受けたら即有効化（ユーザーが更新バーをタップした時）
+self.addEventListener("message", e => {
+  if (e.data === "SKIP_WAITING") self.skipWaiting();
+});
+
+// フェッチ：cache-first（データ通信を最小化）
+// キャッシュにあればネットに一切行かない。無いものだけネットから取得してキャッシュ。
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  const isHTML = req.mode === "navigate" || req.destination === "document";
-
-  if (isHTML) {
-    e.respondWith(
-      fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
-        return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match("./index.html")))
-    );
-    return;
-  }
 
   e.respondWith(
-    caches.match(req).then(cached => cached || fetch(req).then(res => {
-      if (res.ok && (url.origin === location.origin || url.hostname.includes("cloudflare"))) {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
-      }
-      return res;
-    }).catch(() => cached))
+    caches.match(req).then(cached => {
+      if (cached) return cached; // キャッシュ命中 → 通信ゼロ
+      return fetch(req).then(res => {
+        // 自ドメイン or CDN のみキャッシュに追加
+        if (res.ok && (url.origin === location.origin || url.hostname.includes("cloudflare"))) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => {
+        // オフライン時のHTMLフォールバック
+        if (req.mode === "navigate") return caches.match("./index.html");
+      });
+    })
   );
 });

@@ -31,6 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
+const APP_VERSION = "1";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -1282,11 +1283,11 @@ function PrnSettingsSection({config,onConfigChange}) {
 }
 
 // ── 設定タブ ──────────────────────────────────────────────
-function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll}) {
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
   const[confirmDel,setConfirmDel]=useState(false);
   const[tabEditId,setTabEditId]=useState(null);
   const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
-  const exp=()=>{const json=JSON.stringify({...allData,exportedAt:new Date().toISOString()},null,2);const fn=`lifelog-backup-${todayKey()}.json`;if(navigator.share){const f=new File([json],fn,{type:"application/json"});navigator.share({files:[f]}).catch(()=>{});return;}const a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);};
+  const exp=()=>{const json=JSON.stringify({...allData,exportedAt:new Date().toISOString()},null,2);const fn=`lifelog-backup-${todayKey()}.json`;onBackedUp&&onBackedUp();if(navigator.share){const f=new File([json],fn,{type:"application/json"});navigator.share({files:[f]}).catch(()=>{});return;}const a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);};
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <p style={secLbl}>タブの表示</p>
@@ -1332,6 +1333,7 @@ function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medCon
       <div style={card}><div style={{padding:"14px 16px"}}>
         {confirmDel?<><p style={{fontSize:12,color:"rgba(0,0,0,0.55)",marginBottom:12}}>すべての記録・設定を削除します。この操作は取り消せません。</p><div style={{display:"flex",gap:8}}><button onClick={()=>setConfirmDel(false)} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:12}}>キャンセル</button><button onClick={()=>{onDeleteAll();setConfirmDel(false);}} style={{...smBtn("rgba(220,80,80,0.12)"),flex:1,padding:"9px 0",fontSize:12,color:"rgba(180,50,50,0.8)",fontWeight:700}}>削除する</button></div></>:<button onClick={()=>setConfirmDel(true)} style={{...smBtn("rgba(0,0,0,0.05)"),width:"100%",padding:"9px 0",fontSize:12,color:"rgba(0,0,0,0.38)"}}>すべてのデータを削除</button>}
       </div></div>
+      <p style={{textAlign:"center",fontSize:10,color:"rgba(0,0,0,0.28)",marginTop:16}}>ライフログ　バージョン {APP_VERSION}</p>
     </div>
   );
 }
@@ -1352,6 +1354,7 @@ function App() {
   // 初期タブは左端（DEFAULT_TAB_ORDER[0]）
   const[tab,      setTab]      =useState(DEFAULT_TAB_ORDER[0]);
   const[loaded,   setLoaded]   =useState(false);
+  const[backupDue,setBackupDue]=useState(false);
 
   useEffect(()=>{
     (async()=>{
@@ -1370,6 +1373,10 @@ function App() {
       if(as_?.tabOrder){const p=as_.tabOrder.filter(t=>!SECONDARY_TABS.includes(t));const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));const merged=[...p,...missing];if(merged.length)setTabOrder(merged);}
       if(as_?.hiddenTabs)setHiddenTabs(as_.hiddenTabs.filter(t=>!SECONDARY_TABS.includes(t)));
       if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab))setTab(as_.lastTab);
+      // バックアップ催促：最後のバックアップから7日以上経過、または一度もしていない
+      const hasData=Object.keys(br||{}).length||Object.keys(mr||{}).length||Object.keys(mlr||{}).length||Object.keys(tr||{}).length||Object.keys(mmr||{}).length||Object.keys(mdr||{}).length;
+      const lb=as_?.lastBackup;
+      if(hasData&&(!lb||(Date.now()-lb)>604800000))setBackupDue(true);
       setLoaded(true);
     })();
   },[]);
@@ -1385,6 +1392,7 @@ function App() {
   const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
   const saveSets  =useCallback(async patch=>{const cur=await dbGet(K.set)||{};await dbSet(K.set,{...cur,...patch});},[]);
 
+  const markBackedUp  =useCallback(()=>{setBackupDue(false);saveSets({lastBackup:Date.now()});},[saveSets]);
   const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
   const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
   const changeTabOrder=useCallback(async o=>{setTabOrder(o);await saveSets({tabOrder:o});},[saveSets]);
@@ -1453,13 +1461,68 @@ function App() {
       {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood}/>}
       {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
       {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {backupDue&&(
+        <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:9998,display:"flex",alignItems:"center",gap:10,
+          padding:"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
+          borderTop:"1px solid rgba(0,0,0,0.08)",boxShadow:"0 -2px 12px rgba(0,0,0,0.06)"}}>
+          <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>そろそろバックアップしませんか？</span>
+          <button onClick={()=>{changeTab("settings");setBackupDue(false);}}
+            style={{background:"rgba(0,0,0,0.09)",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,color:"rgba(0,0,0,0.65)",cursor:"pointer",fontFamily:"inherit"}}>設定を開く</button>
+          <button onClick={()=>setBackupDue(false)}
+            style={{background:"none",border:"none",color:"rgba(0,0,0,0.3)",fontSize:14,cursor:"pointer",padding:"4px",fontFamily:"inherit"}}>✕</button>
+        </div>
+      )}
     </div>
   );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
+
+// ── Service Worker 登録 + 更新検知（データ通信最小） ──
+if("serviceWorker" in navigator){
+  let refreshing=false;
+  // 新しいSWが有効化されたらページを1回だけリロード
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{
+    if(refreshing)return;refreshing=true;location.reload();
+  });
+  navigator.serviceWorker.register("./sw.js").then(reg=>{
+    // 待機中の新SWがいれば更新バーを出す
+    const notify=sw=>{ if(sw) showUpdateBar(sw); };
+    if(reg.waiting) notify(reg.waiting);
+    reg.addEventListener("updatefound",()=>{
+      const nw=reg.installing;
+      if(!nw)return;
+      nw.addEventListener("statechange",()=>{
+        // 既存SWがある状態で installed になった＝更新あり
+        if(nw.state==="installed" && navigator.serviceWorker.controller) notify(nw);
+      });
+    });
+    // 起動時に一度だけ更新確認（以降は自動チェックに任せる＝通信は最小限）
+    reg.update().catch(()=>{});
+  }).catch(()=>{});
+}
+
+// 更新バー（更新があるときだけ表示）
+function showUpdateBar(worker){
+  if(document.getElementById("update-bar"))return;
+  const bar=document.createElement("div");
+  bar.id="update-bar";
+  bar.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;align-items:center;gap:12px;padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:rgba(30,30,30,0.92);color:#fff;font-family:inherit;font-size:13px;box-shadow:0 -2px 12px rgba(0,0,0,0.2)";
+  const txt=document.createElement("span");
+  txt.textContent="新しいバージョンがあります";
+  txt.style.cssText="flex:1";
+  const btn=document.createElement("button");
+  btn.textContent="更新";
+  btn.style.cssText="background:#fff;color:rgba(0,0,0,0.75);border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit";
+  btn.onclick=()=>{ btn.textContent="更新中…"; worker.postMessage("SKIP_WAITING"); };
+  const close=document.createElement("button");
+  close.textContent="✕";
+  close.style.cssText="background:none;border:none;color:rgba(255,255,255,0.6);font-size:15px;cursor:pointer;padding:4px";
+  close.onclick=()=>bar.remove();
+  bar.appendChild(txt);bar.appendChild(btn);bar.appendChild(close);
+  document.body.appendChild(bar);
+}
 </script>
 </body>
 </html>
