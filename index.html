@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -1414,7 +1414,9 @@ function App() {
     if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
     if(data.med_r!==undefined){setMedR(data.med_r||{});await dbSet(K.med,data.med_r||{});}
     if(data.med_c!==undefined){let c=data.med_c||defaultMedConf();const df=defaultMedConf();c={...df,...c,slots:{...df.slots,...c.slots}};for(const sid of Object.keys(c.slots))c.slots[sid].meds=(c.slots[sid].meds||[]).map(normMed);setMedC(c);await dbSet(K.medC,c);}
-  },[]);
+    // 復元直後はバックアップ催促を出さない（最終バックアップ日時を今に更新）
+    setBackupDue(false);await saveSets({lastBackup:Date.now()});
+  },[saveSets]);
   const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
 
   if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
