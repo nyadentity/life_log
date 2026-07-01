@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -1479,49 +1479,35 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 
-// ── Service Worker 登録 + 更新検知（データ通信最小） ──
+// ── Service Worker 登録 + 完全自動更新 ──
 if("serviceWorker" in navigator){
   let refreshing=false;
-  // 新しいSWが有効化されたらページを1回だけリロード
+  // 新しいSWが制御を開始したら自動で1回リロード（＝即最新版に）
   navigator.serviceWorker.addEventListener("controllerchange",()=>{
     if(refreshing)return;refreshing=true;location.reload();
   });
   navigator.serviceWorker.register("./sw.js").then(reg=>{
-    // 待機中の新SWがいれば更新バーを出す
-    const notify=sw=>{ if(sw) showUpdateBar(sw); };
-    if(reg.waiting) notify(reg.waiting);
+    // 起動のたびに更新を確認
+    reg.update().catch(()=>{});
+    // 待機中の新SWがいれば即有効化（skipWaiting→controllerchange→reload）
+    if(reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
     reg.addEventListener("updatefound",()=>{
       const nw=reg.installing;
       if(!nw)return;
       nw.addEventListener("statechange",()=>{
-        // 既存SWがある状態で installed になった＝更新あり
-        if(nw.state==="installed" && navigator.serviceWorker.controller) notify(nw);
+        if(nw.state==="installed" && navigator.serviceWorker.controller){
+          // 新版インストール完了 → 即有効化
+          nw.postMessage("SKIP_WAITING");
+        }
       });
     });
-    // 起動時に一度だけ更新確認（以降は自動チェックに任せる＝通信は最小限）
-    reg.update().catch(()=>{});
   }).catch(()=>{});
-}
-
-// 更新バー（更新があるときだけ表示）
-function showUpdateBar(worker){
-  if(document.getElementById("update-bar"))return;
-  const bar=document.createElement("div");
-  bar.id="update-bar";
-  bar.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;align-items:center;gap:12px;padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:rgba(30,30,30,0.92);color:#fff;font-family:inherit;font-size:13px;box-shadow:0 -2px 12px rgba(0,0,0,0.2)";
-  const txt=document.createElement("span");
-  txt.textContent="新しいバージョンがあります";
-  txt.style.cssText="flex:1";
-  const btn=document.createElement("button");
-  btn.textContent="更新";
-  btn.style.cssText="background:#fff;color:rgba(0,0,0,0.75);border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit";
-  btn.onclick=()=>{ btn.textContent="更新中…"; worker.postMessage("SKIP_WAITING"); };
-  const close=document.createElement("button");
-  close.textContent="✕";
-  close.style.cssText="background:none;border:none;color:rgba(255,255,255,0.6);font-size:15px;cursor:pointer;padding:4px";
-  close.onclick=()=>bar.remove();
-  bar.appendChild(txt);bar.appendChild(btn);bar.appendChild(close);
-  document.body.appendChild(bar);
+  // アプリが再び前面に来たときも更新チェック（バックグラウンド復帰時）
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible"){
+      navigator.serviceWorker.getRegistration().then(r=>r&&r.update().catch(()=>{}));
+    }
+  });
 }
 </script>
 </body>
