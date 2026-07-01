@@ -192,15 +192,50 @@ function DateNav({curDate,realToday,onPrev,onNext}) {
     </div>
   );
 }
-function MonthNav({month,maxMonth,onPrev,onNext}) {
+function MonthNav({month,maxMonth,minMonth,onPrev,onNext,onPick}) {
+  const[open,setOpen]=useState(false);
   const atMax=month>=maxMonth;
+  const[cy,cm]=month.split("-");
+  const maxY=+maxMonth.slice(0,4);
+  const minY=minMonth?+minMonth.slice(0,4):maxY-5;
+  const years=[];for(let y=maxY;y>=minY;y--)years.push(y);
+  const pickYM=(y,mo)=>{const mk=`${y}-${String(mo).padStart(2,"0")}`;if(mk<=maxMonth&&(!minMonth||mk>=minMonth)){onPick(mk);setOpen(false);}};
   return(
-    <div style={{display:"flex",alignItems:"center",marginBottom:12,gap:4}}>
-      <button onClick={onPrev} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)"}}>‹</button>
-      <div style={{flex:1,textAlign:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,padding:"6px 0"}}>
-        <span style={{fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{fmtMonth(month)}</span>
+    <div style={{marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        <button onClick={onPrev} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)"}}>‹</button>
+        <button onClick={()=>setOpen(o=>!o)} style={{flex:1,textAlign:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,padding:"6px 0",cursor:"pointer",fontFamily:"inherit"}}>
+          <span style={{fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{fmtMonth(month)}{" "}<span style={{fontSize:9,color:"rgba(0,0,0,0.3)"}}>{open?"▲":"▼"}</span></span>
+        </button>
+        <button onClick={onNext} disabled={atMax} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:atMax?0.3:1}}>›</button>
       </div>
-      <button onClick={onNext} disabled={atMax} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:atMax?0.3:1}}>›</button>
+      {open&&(
+        <div style={{...card,marginTop:6,marginBottom:0}}>
+          <div style={{padding:"12px 14px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(0,0,0,0.35)",marginBottom:6}}>年</p>
+            <div className="scrolltab" style={{marginBottom:12}}>
+              {years.map(y=>(
+                <button key={y} onClick={()=>pickYM(y,+cm)}
+                  style={{flexShrink:0,padding:"5px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
+                    background:+cy===y?"rgba(0,0,0,0.12)":"rgba(0,0,0,0.05)",color:+cy===y?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.4)"}}>{y}</button>
+              ))}
+            </div>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(0,0,0,0.35)",marginBottom:6}}>月</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:5}}>
+              {Array.from({length:12},(_,i)=>i+1).map(mo=>{
+                const mk=`${cy}-${String(mo).padStart(2,"0")}`;
+                const dis=mk>maxMonth||(minMonth&&mk<minMonth);
+                const sel=+cm===mo;
+                return(
+                  <button key={mo} onClick={()=>!dis&&pickYM(+cy,mo)} disabled={dis}
+                    style={{padding:"7px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:dis?"default":"pointer",fontFamily:"inherit",
+                      background:sel?"rgba(0,0,0,0.12)":"rgba(0,0,0,0.05)",color:sel?"rgba(0,0,0,0.6)":dis?"rgba(0,0,0,0.2)":"rgba(0,0,0,0.45)"}}>{mo}</button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -898,7 +933,7 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
   const next=()=>{const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);};
   return(
     <div style={{width:"100%",maxWidth:380}}>
-      <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next}/>
+      <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next} onPick={setMonth}/>
       <p style={secLbl}>入浴・歯磨き</p>
       <div style={card}><div style={{padding:"12px 16px"}}><MonthCalendar month={month} bathR={bathR} teethR={teethR}/></div></div>
       <p style={{...secLbl,marginTop:8}}>服薬の時間帯</p>
@@ -906,71 +941,35 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
       <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
       <div style={card}><div style={{padding:"12px 16px"}}><DailyCalChart records={mealR} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>気分・体調・睡眠</p>
-      <div style={card}><div style={{padding:"12px 16px"}}><MoodCombinedChart records={moodR}/></div></div>
+      <div style={card}><div style={{padding:"12px 16px"}}><MoodCombinedChart records={moodR} month={month}/></div></div>
     </div>
   );
 }
 
 
 // ── 統計：気分チャート（月／年トグル）─────────────────────
-function MoodCombinedChart({records}) {
-  const[range,setRange]=useState("month");
+function MoodCombinedChart({records,month}) {
   const today=todayKey();
-  const curMonth=today.slice(0,7);
-  const curYear=today.slice(0,4);
-  const[month,setMonth]=useState(curMonth);
-  const[year,setYear]=useState(curYear);
-
-  // 3系列：気分(0-4→1-5換算)、体調(1-5)、睡眠(1-5)
   const SERIES=[
     { key:"mood",      label:"気分", color:CAT.mood.color, get:r=>r.mood!=null?r.mood+1:null },
     { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
     { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
   ];
   const levels=5;
-
-  // 各系列のポイント配列を構築
-  let N=0;let xLabels=[];
+  const[y,m]=month.split("-");const dim=dimY(y,m);const N=dim;
+  const xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
   const buildSeries=getV=>{
     const pts=[];
-    if(range==="month"){
-      const[y,m]=month.split("-");const dim=dimY(y,m);N=dim;
-      for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);const r=records[ds];pts.push({i:d-1,v:r?getV(r):null,future:ds>today});}
-      xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
-    }else{
-      N=12;
-      for(let mo=1;mo<=12;mo++){const mk=`${year}-${String(mo).padStart(2,"0")}`;const vals=Object.keys(records).filter(k=>k.startsWith(mk)).map(k=>getV(records[k])).filter(v=>v!=null);const avg=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null;pts.push({i:mo-1,v:avg,future:mk>curMonth});}
-      xLabels=["1月","6月","12月"];
-    }
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);const r=records[ds];pts.push({i:d-1,v:r?getV(r):null,future:ds>today});}
     return pts;
   };
   const seriesData=SERIES.map(s=>({...s,pts:buildSeries(s.get)}));
-
-  const navPrev=()=>{if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));}else setYear(String(+year-1));};
-  const navNext=()=>{if(range==="month"){const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);}else{const n=String(+year+1);if(n<=curYear)setYear(n);}};
-  const atMax=range==="month"?month>=curMonth:year>=curYear;
-  const navLabel=range==="month"?fmtMonth(month):`${year}年`;
-
   const has=seriesData.some(s=>s.pts.some(p=>p.v!=null&&!p.future));
   const H=130;
   const yOf=v=>H-8-((v-1)/(levels-1))*(H-16);
 
   return(
     <div>
-      <div style={{display:"flex",gap:4,marginBottom:10}}>
-        {[["month","月"],["year","年"]].map(([k,lb])=>(
-          <button key={k} onClick={()=>setRange(k)}
-            style={{flex:1,padding:"6px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
-              background:range===k?CAT.mood.color:"rgba(0,0,0,0.06)",color:range===k?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
-            {lb}
-          </button>
-        ))}
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:12}}>
-        <button onClick={navPrev} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:"pointer",color:"rgba(0,0,0,0.4)"}}>‹</button>
-        <span style={{flex:1,textAlign:"center",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.55)"}}>{navLabel}</span>
-        <button onClick={navNext} disabled={atMax} style={{background:"rgba(0,0,0,0.04)",border:"none",borderRadius:8,width:26,height:26,fontSize:14,cursor:atMax?"default":"pointer",color:"rgba(0,0,0,0.4)",opacity:atMax?0.3:1}}>›</button>
-      </div>
       {/* 凡例 */}
       <div style={{display:"flex",gap:12,marginBottom:8,justifyContent:"center"}}>
         {SERIES.map(s=>(
