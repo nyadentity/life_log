@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -728,8 +728,8 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethC
         const teethItems=(Array.isArray(teeth)?teeth:[]).map(e=>{const it=(teethConf?.items||[]).find(x=>x.id===e.itemId);return{t:e.time,label:e.itemName||"歯磨き",color:(it&&it.color)||CAT.teeth.color,sub:""};}).filter(matchQ).sort(sortT);
         const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.fullness?FULLNESS_LABELS[e.fullness-1]:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
         const medItems=[];
-        aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m).join("/")});});
-        dW.forEach(wm=>{if(med[`w:${wm.id}`])medItems.push({t:med[`w:${wm.id}`],label:wm.name,color:WC,sub:""});});
+        aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
+        dW.forEach(wm=>{const k=`w:${wm.id}`;if(med[k])medItems.push({t:med[k],label:(med.__names&&med.__names[k]?med.__names[k][0]:wm.name),color:WC,sub:""});});
         (Array.isArray(med.prnList)?med.prnList:[]).forEach(e=>medItems.push({t:e.time,label:`頓服 ${e.name}`,color:e.color||"#d0d0d0",sub:""}));
         if(med.prn)medItems.push({t:null,label:"頓服メモ",color:"#d0d0d0",sub:med.prn});
         const filteredMed=medItems.filter(matchQ).sort(sortT);
@@ -1474,9 +1474,19 @@ function App() {
   const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
   const changeTabOrder=useCallback(async o=>{setTabOrder(o);await saveSets({tabOrder:o});},[saveSets]);
 
-  const medTake=useCallback((dk,sid)=>saveMed({...medR,[dk]:{...(medR[dk]||{}),[sid]:new Date().toISOString()}}),[medR,saveMed]);
+  const medTake=useCallback((dk,sid)=>{
+    // 服用時刻を保存しつつ、その時点の薬名を __names[sid] に焼き込む
+    const nx=JSON.parse(JSON.stringify(medR));
+    if(!nx[dk])nx[dk]={};
+    nx[dk][sid]=new Date().toISOString();
+    let names=[];
+    if(sid.startsWith("w:")){const wm=(medC.weeklyMeds||[]).find(w=>`w:${w.id}`===sid);if(wm)names=[wm.name];}
+    else{names=((medC.slots[sid]||{}).meds||[]).map(m=>m.name||m);}
+    if(names.length){if(!nx[dk].__names)nx[dk].__names={};nx[dk].__names[sid]=names;}
+    saveMed(nx);
+  },[medR,medC,saveMed]);
   const medUpd=useCallback((dk,sid,val)=>{const nx=JSON.parse(JSON.stringify(medR));if(!nx[dk])nx[dk]={};if(sid==="prn"){if(val)nx[dk][sid]=val;else delete nx[dk][sid];}else nx[dk][sid]=hmIso(dk,val);if(!Object.keys(nx[dk]).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
-  const medRem=useCallback((dk,sid)=>{const nx=JSON.parse(JSON.stringify(medR));delete nx[dk][sid];if(!Object.keys(nx[dk]||{}).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
+  const medRem=useCallback((dk,sid)=>{const nx=JSON.parse(JSON.stringify(medR));if(nx[dk]){delete nx[dk][sid];if(nx[dk].__names)delete nx[dk].__names[sid];if(nx[dk].__names&&!Object.keys(nx[dk].__names).length)delete nx[dk].__names;}if(!Object.keys(nx[dk]||{}).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
   const prnAdd=useCallback((dk,preset)=>{const nx=JSON.parse(JSON.stringify(medR));if(!nx[dk])nx[dk]={};const list=Array.isArray(nx[dk].prnList)?nx[dk].prnList:[];list.push({id:uid(),name:preset.name,color:preset.color||"#d0d0d0",time:new Date().toISOString()});nx[dk].prnList=list;saveMed(nx);},[medR,saveMed]);
   const prnTime=useCallback((dk,id,hm)=>{const nx=JSON.parse(JSON.stringify(medR));const list=(nx[dk]?.prnList||[]).map(e=>e.id===id?{...e,time:hmIso(dk,hm)}:e);nx[dk].prnList=list;saveMed(nx);},[medR,saveMed]);
   const prnRemove=useCallback((dk,id)=>{const nx=JSON.parse(JSON.stringify(medR));const list=(nx[dk]?.prnList||[]).filter(e=>e.id!==id);if(list.length)nx[dk].prnList=list;else delete nx[dk].prnList;if(!Object.keys(nx[dk]||{}).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
