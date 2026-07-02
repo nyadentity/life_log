@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -60,6 +60,7 @@ const MEAL_COLORS = {
   "昼食": { color:"#cce9b8", dim:"rgba(204,233,184,0.4)" },
   "夕食": { color:"#c2d8f0", dim:"rgba(194,216,240,0.4)" },
   "間食": { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
+  "その他": { color:"#cccccc", dim:"rgba(204,204,204,0.4)" }, // 旧記録用フォールバック（ボタンには出ない）
 };
 const MEAL_CATS = ["朝食","昼食","夕食","間食"];
 const FULLNESS_LABELS = ["少なめ","普通","多め","満腹","食べすぎ"];
@@ -147,6 +148,7 @@ function useAutoGrow(deps=[]){
   return ref;
 }
 const todayKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function addMonths(mk,n){const[y,m]=mk.split("-").map(Number);const t=y*12+(m-1)+n;return `${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;}
 function addDays(ds,n){const[y,m,d]=ds.split('-');const dt=new Date(+y,+m-1,+d+n);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}
 const dateWd = ds => { const [y,m,d]=ds.split("-"); return new Date(+y,+m-1,+d).getDay(); };
 const isoHM = iso => new Date(iso).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",hour12:false});
@@ -930,8 +932,8 @@ function DailyCalChart({records,month}) {
 // ── 統計タブ ──────────────────────────────────────────────
 function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
   const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
-  const prev=()=>{const d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(d.toISOString().slice(0,7));};
-  const next=()=>{const d=new Date(month+"-01");d.setMonth(d.getMonth()+1);const n=d.toISOString().slice(0,7);if(n<=curMonth)setMonth(n);};
+  const prev=()=>setMonth(addMonths(month,-1));
+  const next=()=>{const n=addMonths(month,1);if(n<=curMonth)setMonth(n);};
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next} onPick={setMonth}/>
