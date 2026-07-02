@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.6";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -196,49 +196,29 @@ function DateNav({curDate,realToday,onPrev,onNext}) {
   );
 }
 function MonthNav({month,maxMonth,minMonth,onPrev,onNext,onPick}) {
-  const[open,setOpen]=useState(false);
   const atMax=month>=maxMonth;
   const[cy,cm]=month.split("-");
+  const selYear=+cy, selMonth=+cm; // selMonthは1-12
   const maxY=+maxMonth.slice(0,4);
   const minY=minMonth?+minMonth.slice(0,4):maxY-5;
   const years=[];for(let y=maxY;y>=minY;y--)years.push(y);
-  const pickYM=(y,mo)=>{const mk=`${y}-${String(mo).padStart(2,"0")}`;if(mk<=maxMonth&&(!minMonth||mk>=minMonth)){onPick(mk);setOpen(false);}};
+  const go=(y,mo)=>{let mk=`${y}-${String(mo).padStart(2,"0")}`;if(mk>maxMonth)mk=maxMonth;if(minMonth&&mk<minMonth)mk=minMonth;onPick(mk);};
+  const selStyle={border:"none",background:"transparent",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)",outline:"none",WebkitAppearance:"none",appearance:"none",textAlign:"center",textAlignLast:"center",padding:"0 2px",fontFamily:"inherit",cursor:"pointer"};
+  const unitStyle={fontSize:12,color:"rgba(0,0,0,0.5)"};
   return(
-    <div style={{marginBottom:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:4}}>
-        <button onClick={onPrev} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)"}}>‹</button>
-        <button onClick={()=>setOpen(o=>!o)} style={{flex:1,textAlign:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,padding:"6px 0",cursor:"pointer",fontFamily:"inherit"}}>
-          <span style={{fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{fmtMonth(month)}{" "}<span style={{fontSize:9,color:"rgba(0,0,0,0.3)"}}>{open?"▲":"▼"}</span></span>
-        </button>
-        <button onClick={onNext} disabled={atMax} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:atMax?0.3:1}}>›</button>
+    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:12}}>
+      <button onClick={onPrev} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)"}}>‹</button>
+      <div style={{flex:1,textAlign:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,padding:"6px 0",display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+        <select value={selYear} onChange={e=>go(+e.target.value,selMonth)} style={selStyle}>
+          {years.map(y=><option key={y} value={y}>{y}</option>)}
+        </select>
+        <span style={unitStyle}>年</span>
+        <select value={selMonth} onChange={e=>go(selYear,+e.target.value)} style={selStyle}>
+          {Array.from({length:12},(_,i)=>i+1).map(mo=><option key={mo} value={mo}>{mo}</option>)}
+        </select>
+        <span style={unitStyle}>月</span>
       </div>
-      {open&&(
-        <div style={{...card,marginTop:6,marginBottom:0}}>
-          <div style={{padding:"12px 14px"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(0,0,0,0.35)",marginBottom:6}}>年</p>
-            <div className="scrolltab" style={{marginBottom:12}}>
-              {years.map(y=>(
-                <button key={y} onClick={()=>pickYM(y,+cm)}
-                  style={{flexShrink:0,padding:"5px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
-                    background:+cy===y?"rgba(0,0,0,0.12)":"rgba(0,0,0,0.05)",color:+cy===y?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.4)"}}>{y}</button>
-              ))}
-            </div>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(0,0,0,0.35)",marginBottom:6}}>月</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:5}}>
-              {Array.from({length:12},(_,i)=>i+1).map(mo=>{
-                const mk=`${cy}-${String(mo).padStart(2,"0")}`;
-                const dis=mk>maxMonth||(minMonth&&mk<minMonth);
-                const sel=+cm===mo;
-                return(
-                  <button key={mo} onClick={()=>!dis&&pickYM(+cy,mo)} disabled={dis}
-                    style={{padding:"7px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:dis?"default":"pointer",fontFamily:"inherit",
-                      background:sel?"rgba(0,0,0,0.12)":"rgba(0,0,0,0.05)",color:sel?"rgba(0,0,0,0.6)":dis?"rgba(0,0,0,0.2)":"rgba(0,0,0,0.45)"}}>{mo}</button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      <button onClick={onNext} disabled={atMax} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:atMax?0.3:1}}>›</button>
     </div>
   );
 }
