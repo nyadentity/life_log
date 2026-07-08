@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.9";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -317,7 +317,13 @@ function MedTab({records,config,onTake,onUpdate,onRemove,onPrnAdd,onPrnTime,onPr
     <div style={{width:"100%",maxWidth:380}}>
       <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
       {aSlots.map(s=>{
-        const ts=dr[s.id],meds=(config.slots[s.id]?.meds||[]).map(m=>m.name||m);
+        const ts=dr[s.id];
+        const curMeds=(config.slots[s.id]?.meds||[]).map(m=>m.name||m);
+        // 表示する薬名：打刻済みなら焼き込み名を優先、なければ現在の設定
+        const baked=(dr.__names&&dr.__names[s.id])||null;
+        const meds=ts&&baked?baked:curMeds;
+        // 非表示条件：今その時間帯に薬が無く、かつその日に打刻もない
+        if(curMeds.length===0&&!ts)return null;
         return(
           <div key={s.id} style={card}>
             <div style={{display:"flex",alignItems:"flex-start",padding:"12px 16px",gap:12}}>
@@ -362,7 +368,7 @@ function MedTab({records,config,onTake,onUpdate,onRemove,onPrnAdd,onPrnTime,onPr
             {todayW.length>0&&(()=>{const anyTaken=todayW.some(wm=>dr[`w:${wm.id}`]);return(
               <div style={{borderRadius:8,padding:"4px 7px",background:anyTaken?WC:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:anyTaken?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>曜日限定</div>
             );})()}
-            {(dr.prn||(Array.isArray(dr.prnList)&&dr.prnList.length))&&<div style={{borderRadius:8,padding:"4px 7px",background:"#d0d0d0",fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.5)"}}>頓服</div>}
+            {(dr.prn||(Array.isArray(dr.prnList)&&dr.prnList.length))&&<div style={{borderRadius:8,padding:"4px 7px",background:"#f5e6b0",fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.5)"}}>頓服</div>}
           </div>
         </div>
       </div>
@@ -381,7 +387,7 @@ function PrnField({records,config,onPrnAdd,onPrnTime,onPrnRemove,onNote,dateKey}
     <div style={{...card,marginTop:6}}>
       <div style={{padding:"12px 16px"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-          <div style={{width:4,height:18,borderRadius:2,background:"#d0d0d0",flexShrink:0}}/>
+          <div style={{width:4,height:18,borderRadius:2,background:(list.length||(dr.prn&&dr.prn.trim()))?"#f5e6b0":"rgba(0,0,0,0.08)",flexShrink:0}}/>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.5)",letterSpacing:".05em"}}>頓服</p>
         </div>
         {/* プリセット選択 */}
@@ -753,7 +759,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethC
         aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
         dW.forEach(wm=>{const k=`w:${wm.id}`;if(med[k])medItems.push({t:med[k],label:(med.__names&&med.__names[k]?med.__names[k][0]:wm.name),color:WC,sub:""});});
         (Array.isArray(med.prnList)?med.prnList:[]).forEach(e=>medItems.push({t:e.time,label:`頓服 ${e.name}`,color:e.color||"#d0d0d0",sub:""}));
-        if(med.prn)medItems.push({t:null,label:"頓服メモ",color:"#d0d0d0",sub:med.prn});
+        if(med.prn)medItems.push({t:null,label:"頓服メモ",color:"#f5e6b0",sub:med.prn});
         const filteredMed=medItems.filter(matchQ).sort(sortT);
         const moodItems=[];
         if(mood){
@@ -1014,7 +1020,7 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,mealR}) {
       {slotStats.map(s=><Row key={s.label} label={s.label} color={s.color} right={`${s.taken}/${s.total}日（${s.pct}%）`}/>)}
       {weeklyStats.map(w=><Row key={w.label} label={w.label} color={w.color} right={`${w.taken}/${w.total}回（${w.pct}%）`}/>)}
       {(prnCount>0||prnNoteDays>0)&&(
-        <Row label="頓服" color="#d0d0d0" right={prnCount>0?`${prnCount}回${prnNoteDays>0?`（メモ${prnNoteDays}日）`:""}`:`メモ${prnNoteDays}日`}/>
+        <Row label="頓服" color="#f5e6b0" right={prnCount>0?`${prnCount}回${prnNoteDays>0?`（メモ${prnNoteDays}日）`:""}`:`メモ${prnNoteDays}日`}/>
       )}
       {fieldStats.length>0&&<>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>気分・体調・睡眠</p>
@@ -1272,7 +1278,7 @@ function TeethSettingsSection({conf,onConfChange}) {
       <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
         placeholder="アイテム名（例：電動歯ブラシ、フロス）"
         style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
-      <button onClick={add} style={smBtn(CAT.teeth.color)}>追加</button>
+      <button onClick={add} style={smBtn("#c2e6dd")}>追加</button>
     </div></div>
   </>);
 }
@@ -1333,7 +1339,7 @@ function TagSettingsSection({conf,onConfChange}) {
 
 // ── 頓服プリセット設定 ──────────────────────────────────
 function PrnSettingsSection({config,onConfigChange}) {
-  const PRN_DEF="#c2e6dd";
+  const PRN_DEF="#f5e6b0";
   const[newName,setNewName]=useState("");
   const[editId,setEditId]=useState(null);
   const[editColor,setEditColor]=useState(null);
