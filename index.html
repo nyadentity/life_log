@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "3.3";
+const APP_VERSION = "4.8";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -128,27 +128,14 @@ const uid = () => Math.random().toString(36).slice(2,9);
 // textarea を内容に合わせて自動で高さ調整
 // 点列[{x,y}]を滑らかな曲線パス(d属性)に変換（Catmull-Rom→ベジェ）
 function smoothPath(pts){
-  const n=pts.length;
-  if(!n)return"";
-  if(n===1)return`M ${pts[0].x} ${pts[0].y}`;
-  if(n===2)return`M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
-  // 区間ごとの傾き
-  const dx=[],dy=[],slope=[];
-  for(let i=0;i<n-1;i++){const hx=pts[i+1].x-pts[i].x;dx.push(hx);dy.push(pts[i+1].y-pts[i].y);slope.push(hx!==0?(pts[i+1].y-pts[i].y)/hx:0);}
-  // 各点の接線 m[i]（Fritsch–Carlson で単調性を保証＝跳ね防止）
-  const m=new Array(n);
-  m[0]=slope[0];m[n-1]=slope[n-2];
-  for(let i=1;i<n-1;i++){
-    if(slope[i-1]*slope[i]<=0){m[i]=0;}
-    else{const w1=2*dx[i]+dx[i-1],w2=dx[i]+2*dx[i-1];m[i]=(w1+w2)/(w1/slope[i-1]+w2/slope[i]);}
-  }
-  // 各接線をエルミート→ベジェ制御点に変換して描画
+  if(!pts.length)return"";
+  if(pts.length===1)return`M ${pts[0].x} ${pts[0].y}`;
   let d=`M ${pts[0].x} ${pts[0].y}`;
-  for(let i=0;i<n-1;i++){
-    const h=dx[i];
-    const c1x=pts[i].x+h/3,   c1y=pts[i].y+m[i]*h/3;
-    const c2x=pts[i+1].x-h/3, c2y=pts[i+1].y-m[i+1]*h/3;
-    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${pts[i+1].x} ${pts[i+1].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1.x+(p2.x-p0.x)/6, c1y=p1.y+(p2.y-p0.y)/6;
+    const c2x=p2.x-(p3.x-p1.x)/6, c2y=p2.y-(p3.y-p1.y)/6;
+    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
   }
   return d;
 }
@@ -1073,10 +1060,8 @@ function MoodCombinedChart({records,month}) {
     { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
     { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
   ];
-  // 表示する系列（凡例タップで切替）。全てオフになったら全表示に戻す。
-  const[hidden,setHidden]=useState({});
-  const toggle=key=>setHidden(h=>{const nx={...h,[key]:!h[key]};if(SERIES.every(s=>nx[s.key]))return{};return nx;});
-  const isOn=key=>!hidden[key];
+  // 表示モード：気分/体調/睡眠の単独 or "all"（比較）
+  const[mode,setMode]=useState("all");
   const levels=5;
   const[y,m]=month.split("-");const dim=dimY(y,m);const N=dim;
   const xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
@@ -1089,19 +1074,35 @@ function MoodCombinedChart({records,month}) {
   const has=seriesData.some(s=>s.pts.some(p=>p.v!=null&&!p.future));
   const H=130;
   const yOf=v=>H-8-((v-1)/(levels-1))*(H-16);
+  const xOf=i=>N>1?(i/(N-1))*100:50;
+  // 折れ線パス（記録が途切れたら分割）
+  const polySegs=s=>{
+    const paths=[];let run=[];
+    const flush=()=>{if(run.length>1)paths.push(run);run=[];};
+    s.pts.forEach(p=>{ if(p.v==null||p.future){flush();return;} run.push({x:xOf(p.i),y:yOf(p.v)}); });
+    flush();return paths;
+  };
+  const lineD=pp=>pp.map((p,idx)=>`${idx?"L":"M"} ${p.x} ${p.y}`).join(" ");
+  const visible=mode==="all"?seriesData:seriesData.filter(s=>s.key===mode);
 
   return(
     <div>
-      {/* 凡例 */}
-      <div style={{display:"flex",gap:8,marginBottom:8,justifyContent:"center"}}>
-        {SERIES.map(s=>{const on=isOn(s.key);return(
-          <button key={s.key} onClick={()=>toggle(s.key)}
+      {/* モード切替：単独 ＋ 比較 */}
+      <div style={{display:"flex",gap:6,marginBottom:10,justifyContent:"center",flexWrap:"wrap"}}>
+        {SERIES.map(s=>{const on=mode===s.key;return(
+          <button key={s.key} onClick={()=>setMode(s.key)}
             style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
-              background:on?"rgba(0,0,0,0.05)":"transparent",borderRadius:14,padding:"4px 10px",opacity:on?1:0.4}}>
+              background:on?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
             <div style={{width:14,height:3,borderRadius:2,background:s.color}}/>
-            <span style={{fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.5)"}}>{s.label}</span>
+            <span style={{fontSize:10,fontWeight:600,color:on?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>{s.label}</span>
           </button>
         );})}
+        <button onClick={()=>setMode("all")}
+          style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
+            background:mode==="all"?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
+          <div style={{width:14,height:3,borderRadius:2,background:"#c8c8c8"}}/>
+          <span style={{fontSize:10,fontWeight:600,color:mode==="all"?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>比較</span>
+        </button>
       </div>
       {!has
         ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
@@ -1114,16 +1115,14 @@ function MoodCombinedChart({records,month}) {
           <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
             {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
             <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
-              {seriesData.filter(s=>isOn(s.key)).map(s=>{
-                const paths=[];let run=[];
-                const flush=()=>{if(run.length){paths.push(run);run=[];}};
-                s.pts.forEach(p=>{ if(p.v==null||p.future){flush();return;} run.push({x:N>1?(p.i/(N-1))*100:50,y:yOf(p.v)}); });
-                flush();
-                return paths.map((pp,idx)=>(
-                  <path key={s.key+"-"+idx} d={smoothPath(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
-                ));
-              })}
+              {visible.map(s=>polySegs(s).map((pp,idx)=>(
+                <path key={s.key+"-"+idx} d={lineD(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+              )))}
             </svg>
+            {/* 日付ごとの点（SVG外のdivで真円を保つ） */}
+            {visible.map(s=>s.pts.filter(p=>p.v!=null&&!p.future).map(p=>(
+              <div key={s.key+"-pt-"+p.i} style={{position:"absolute",left:`${xOf(p.i)}%`,top:yOf(p.v),width:5,height:5,borderRadius:"50%",background:s.color,transform:"translate(-50%,-50%)"}}/>
+            )))}
             <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
             <span style={{position:"absolute",bottom:-14,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{xLabels[1]}</span>
             <span style={{position:"absolute",bottom:-14,right:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[2]}</span>
