@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "3.1";
+const APP_VERSION = "3.3";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -128,15 +128,27 @@ const uid = () => Math.random().toString(36).slice(2,9);
 // textarea を内容に合わせて自動で高さ調整
 // 点列[{x,y}]を滑らかな曲線パス(d属性)に変換（Catmull-Rom→ベジェ）
 function smoothPath(pts){
-  if(!pts.length)return"";
-  if(pts.length===1)return`M ${pts[0].x} ${pts[0].y}`;
+  const n=pts.length;
+  if(!n)return"";
+  if(n===1)return`M ${pts[0].x} ${pts[0].y}`;
+  if(n===2)return`M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  // 区間ごとの傾き
+  const dx=[],dy=[],slope=[];
+  for(let i=0;i<n-1;i++){const hx=pts[i+1].x-pts[i].x;dx.push(hx);dy.push(pts[i+1].y-pts[i].y);slope.push(hx!==0?(pts[i+1].y-pts[i].y)/hx:0);}
+  // 各点の接線 m[i]（Fritsch–Carlson で単調性を保証＝跳ね防止）
+  const m=new Array(n);
+  m[0]=slope[0];m[n-1]=slope[n-2];
+  for(let i=1;i<n-1;i++){
+    if(slope[i-1]*slope[i]<=0){m[i]=0;}
+    else{const w1=2*dx[i]+dx[i-1],w2=dx[i]+2*dx[i-1];m[i]=(w1+w2)/(w1/slope[i-1]+w2/slope[i]);}
+  }
+  // 各接線をエルミート→ベジェ制御点に変換して描画
   let d=`M ${pts[0].x} ${pts[0].y}`;
-  for(let i=0;i<pts.length-1;i++){
-    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
-    const t=0.5;
-    const c1x=p1.x+(p2.x-p0.x)/6*t*2, c1y=p1.y+(p2.y-p0.y)/6*t*2;
-    const c2x=p2.x-(p3.x-p1.x)/6*t*2, c2y=p2.y-(p3.y-p1.y)/6*t*2;
-    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  for(let i=0;i<n-1;i++){
+    const h=dx[i];
+    const c1x=pts[i].x+h/3,   c1y=pts[i].y+m[i]*h/3;
+    const c2x=pts[i+1].x-h/3, c2y=pts[i+1].y-m[i+1]*h/3;
+    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${pts[i+1].x} ${pts[i+1].y}`;
   }
   return d;
 }
@@ -364,7 +376,7 @@ function MedTab({records,config,onTake,onUpdate,onRemove,onPrnAdd,onPrnTime,onPr
         <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:11,color:"rgba(0,0,0,0.33)",flex:1}}>{isToday?"本日":"当日"}</span>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {aSlots.map(s=><div key={s.id} style={{borderRadius:8,padding:"4px 7px",background:dr[s.id]?s.color:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:dr[s.id]?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>{s.label}</div>)}
+            {aSlots.filter(s=>((config.slots[s.id]?.meds||[]).length>0)||dr[s.id]).map(s=><div key={s.id} style={{borderRadius:8,padding:"4px 7px",background:dr[s.id]?s.color:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:dr[s.id]?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>{s.label}</div>)}
             {todayW.length>0&&(()=>{const anyTaken=todayW.some(wm=>dr[`w:${wm.id}`]);return(
               <div style={{borderRadius:8,padding:"4px 7px",background:anyTaken?WC:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:anyTaken?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>曜日限定</div>
             );})()}
