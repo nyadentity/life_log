@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "2.9";
+const APP_VERSION = "3.1";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -1061,6 +1061,10 @@ function MoodCombinedChart({records,month}) {
     { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
     { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
   ];
+  // 表示する系列（凡例タップで切替）。全てオフになったら全表示に戻す。
+  const[hidden,setHidden]=useState({});
+  const toggle=key=>setHidden(h=>{const nx={...h,[key]:!h[key]};if(SERIES.every(s=>nx[s.key]))return{};return nx;});
+  const isOn=key=>!hidden[key];
   const levels=5;
   const[y,m]=month.split("-");const dim=dimY(y,m);const N=dim;
   const xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
@@ -1077,13 +1081,15 @@ function MoodCombinedChart({records,month}) {
   return(
     <div>
       {/* 凡例 */}
-      <div style={{display:"flex",gap:12,marginBottom:8,justifyContent:"center"}}>
-        {SERIES.map(s=>(
-          <div key={s.key} style={{display:"flex",alignItems:"center",gap:4}}>
+      <div style={{display:"flex",gap:8,marginBottom:8,justifyContent:"center"}}>
+        {SERIES.map(s=>{const on=isOn(s.key);return(
+          <button key={s.key} onClick={()=>toggle(s.key)}
+            style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
+              background:on?"rgba(0,0,0,0.05)":"transparent",borderRadius:14,padding:"4px 10px",opacity:on?1:0.4}}>
             <div style={{width:14,height:3,borderRadius:2,background:s.color}}/>
-            <span style={{fontSize:10,color:"rgba(0,0,0,0.45)"}}>{s.label}</span>
-          </div>
-        ))}
+            <span style={{fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.5)"}}>{s.label}</span>
+          </button>
+        );})}
       </div>
       {!has
         ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
@@ -1096,7 +1102,7 @@ function MoodCombinedChart({records,month}) {
           <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
             {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
             <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
-              {seriesData.map(s=>{
+              {seriesData.filter(s=>isOn(s.key)).map(s=>{
                 const paths=[];let run=[];
                 const flush=()=>{if(run.length){paths.push(run);run=[];}};
                 s.pts.forEach(p=>{ if(p.v==null||p.future){flush();return;} run.push({x:N>1?(p.i/(N-1))*100:50,y:yOf(p.v)}); });
@@ -1242,7 +1248,7 @@ function TeethSettingsSection({conf,onConfChange}) {
   const items=conf?.items||[];
   const colOf=item=>item.color||CAT.teeth.color;
   const openEdit=item=>{setEditId(item.id);setEditColor(colOf(item));};
-  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,items:[...items,{id:uid(),name:n,color:CAT.teeth.color}]});setNewName("");};
+  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,items:[...items,{id:uid(),name:n,color:"#dddddd"}]});setNewName("");};
   const rem=id=>{onConfChange({...conf,items:items.filter(i=>i.id!==id)});setEditId(null);};
   const saveEdit=id=>{const n=(editRef.current?.value||"").trim();onConfChange({...conf,items:items.map(i=>i.id===id?{...i,...(n?{name:n}:{}),color:editColor||colOf(i)}:i)});setEditId(null);};
   const mv=(id,dir)=>{const i=items.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=items.length)return;const a=[...items];[a[i],a[j]]=[a[j],a[i]];onConfChange({...conf,items:a});};
@@ -1278,7 +1284,7 @@ function TeethSettingsSection({conf,onConfChange}) {
       <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
         placeholder="アイテム名（例：電動歯ブラシ、フロス）"
         style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
-      <button onClick={add} style={smBtn("#c2e6dd")}>追加</button>
+      <button onClick={add} style={smBtn("#dddddd")}>追加</button>
     </div></div>
   </>);
 }
@@ -1286,7 +1292,7 @@ function TeethSettingsSection({conf,onConfChange}) {
 
 // ── 出来事タグ設定 ──────────────────────────────────────
 function TagSettingsSection({conf,onConfChange}) {
-  const TAG_DEF="#b8d8f0";
+  const TAG_DEF="#dddddd";
   const[newName,setNewName]=useState("");
   const[editId,setEditId]=useState(null);
   const[editColor,setEditColor]=useState(null);
@@ -1339,7 +1345,7 @@ function TagSettingsSection({conf,onConfChange}) {
 
 // ── 頓服プリセット設定 ──────────────────────────────────
 function PrnSettingsSection({config,onConfigChange}) {
-  const PRN_DEF="#f5e6b0";
+  const PRN_DEF="#dddddd";
   const[newName,setNewName]=useState("");
   const[editId,setEditId]=useState(null);
   const[editColor,setEditColor]=useState(null);
