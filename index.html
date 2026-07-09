@@ -1,1290 +1,1647 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#efefef" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="家計簿" />
-<title>家計簿</title>
-<link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon-180.png" />
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Hiragino Kaku Gothic ProN','Hiragino Sans','Meiryo',sans-serif;
-    background: #efefef; color: rgba(0,0,0,0.62);
-    -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
-  }
-  button { -webkit-tap-highlight-color: transparent; font-family: inherit; }
-  input, textarea, select { font-family: inherit; }
-  textarea { resize: none; }
-  #root { max-width: 412px; margin: 0 auto; padding: max(env(safe-area-inset-top),24px) 16px calc(56px + env(safe-area-inset-bottom)); }
-  .col { width: 100%; max-width: 380px; margin: 0 auto; }
-
-  .header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
-  .title { font-size: 17px; font-weight: 700; letter-spacing: .05em; color: rgba(0,0,0,0.65); margin-bottom: 2px; }
-  .subdate { font-size: 11px; color: rgba(0,0,0,0.33); }
-  .sectabs { display: flex; gap: 4px; padding-top: 3px; flex-shrink: 0; }
-  .sectab { padding: 5px 10px; background: rgba(0,0,0,0.04); border: none; border-radius: 8px; font-size: 11px; font-weight: 400; color: rgba(0,0,0,0.4); cursor: pointer; white-space: nowrap; }
-  .sectab.active { background: rgba(0,0,0,0.09); font-weight: 600; color: rgba(0,0,0,0.65); }
-
-  .scrolltab { display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 14px; }
-  .scrolltab::-webkit-scrollbar { display: none; }
-  .tab { flex-shrink: 0; min-width: 56px; padding: 7px 12px; border-radius: 9px; background: transparent; border: 1px solid transparent; font-size: 12px; font-weight: 400; color: rgba(0,0,0,0.35); cursor: pointer; white-space: nowrap; }
-  .tab.active { background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.07); font-weight: 600; color: rgba(0,0,0,0.65); }
-
-  .monthnav { display: flex; align-items: center; gap: 4px; margin-bottom: 12px; }
-  .monthnav .nb { background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.07); border-radius: 9px; width: 30px; height: 30px; font-size: 15px; color: rgba(0,0,0,0.35); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .monthnav .nb[disabled] { opacity: .3; cursor: default; }
-  .monthnav .mlabel { flex: 1; text-align: center; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.07); border-radius: 9px; padding: 6px 0; }
-  .monthnav .mlabel span { font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.6); }
-  .monthnav .mlabel small { font-size: 11px; font-weight: 400; color: rgba(0,0,0,0.3); margin-left: 6px; }
-
-  .card { width: 100%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.07); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
-  .cardpad { display: flex; gap: 12px; padding: 12px 16px; }
-  .bar { width: 4px; border-radius: 2px; flex-shrink: 0; align-self: stretch; }
-  .body { flex: 1; min-width: 0; }
-
-  .seclbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; color: rgba(0,0,0,0.33); margin: 4px 2px 6px; }
-  .total { font-size: 26px; font-weight: 700; color: rgba(0,0,0,0.65); letter-spacing: .01em; }
-  .total small { font-size: 12px; font-weight: 400; color: rgba(0,0,0,0.35); margin-left: 6px; }
-  .count { font-size: 11px; color: rgba(0,0,0,0.33); margin-top: 3px; }
-  .budgetbar { height: 6px; background: rgba(0,0,0,0.06); border-radius: 99px; margin-top: 10px; overflow: hidden; }
-  .budgetbar > div { height: 100%; border-radius: 99px; background: #b8dda0; }
-
-
-  .accrow { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; }
-  .accname { font-size: 13px; color: rgba(0,0,0,0.6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .accbal { font-size: 14px; font-weight: 700; color: rgba(0,0,0,0.62); flex-shrink: 0; margin-left: auto; }
-  .wtag { font-size: 9px; font-weight: 600; color: rgba(0,0,0,0.35); background: rgba(184,221,160,0.4); border-radius: 6px; padding: 1px 6px; flex-shrink: 0; }
-  .subnote { font-size: 10px; color: rgba(0,0,0,0.3); margin-top: 2px; }
-
-  .searchcard .cardpad { padding: 4px 14px; align-items: center; }
-  .searchinp { flex: 1; min-width: 0; border: none; background: transparent; font-size: 13px; color: rgba(0,0,0,0.62); outline: none; padding: 4px 0; -webkit-appearance: none; appearance: none; }
-  .searchinp::placeholder { color: rgba(0,0,0,0.28); }
-  .clr { background: transparent; border: none; padding: 0; width: 24px; height: 24px; font-size: 15px; color: rgba(0,0,0,0.3); cursor: pointer; flex-shrink: 0; display: none; align-items: center; justify-content: center; line-height: 1; }
-
-  .toprow { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-  .rtag { font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.5); border-radius: 8px; padding: 2px 9px; flex-shrink: 0; }
-  .rtag2 { font-size: 10px; font-weight: 600; color: rgba(0,0,0,0.4); background: rgba(0,0,0,0.05); border-radius: 6px; padding: 1px 7px; flex-shrink: 0; }
-  .rdate { font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.45); white-space: nowrap; }
-  .ramt { font-size: 15px; font-weight: 700; color: rgba(0,0,0,0.62); white-space: nowrap; }
-  .editbtn { background: rgba(0,0,0,0.06); border: none; border-radius: 8px; padding: 3px 9px; font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.45); cursor: pointer; flex-shrink: 0; }
-  .movebtn { background: rgba(0,0,0,0.05); border: none; border-radius: 5px; width: 22px; height: 15px; font-size: 8px; color: rgba(0,0,0,0.4); cursor: pointer; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center; }
-  .movebtn[disabled] { opacity: .25; cursor: default; }
-  .rparty { font-size: 13px; color: rgba(0,0,0,0.6); margin-top: 4px; word-break: break-word; }
-  .rmemo { font-size: 12px; color: rgba(0,0,0,0.45); line-height: 1.5; margin-top: 3px; word-break: break-word; white-space: pre-wrap; }
-  .grow { flex: 1; }
-  .empty { text-align: center; color: rgba(0,0,0,0.28); font-size: 12px; padding: 28px 0; }
-
-  .addbtn { width: 100%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.07); border-radius: 14px; padding: 11px 0; font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.4); cursor: pointer; margin-bottom: 10px; }
-
-  .formpad { padding: 14px 16px; }
-  .typesel { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 14px; }
-  .typesel::-webkit-scrollbar { display: none; }
-  .typepill { flex-shrink: 0; border: none; border-radius: 9px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.35); background: rgba(0,0,0,0.04); cursor: pointer; white-space: nowrap; }
-  .typepill.active { color: rgba(0,0,0,0.65); }
-  .frow { display: flex; gap: 12px; margin-bottom: 12px; }
-  .ffield { flex: 1; min-width: 0; }
-  .ffield.amt { flex: 0 0 46%; }
-  .flabel { font-size: 10px; color: rgba(0,0,0,0.38); font-weight: 600; margin-bottom: 4px; }
-  .finp { border: none; border-bottom: 1px solid rgba(0,0,0,0.1); background: transparent; font-size: 14px; color: rgba(0,0,0,0.65); outline: none; padding: 6px 0; width: 100%; display: block; }
-  .finp::placeholder { color: rgba(0,0,0,0.28); }
-  .finp.amt { text-align: right; font-weight: 700; }
-  .fsel { border: none; border-bottom: 1px solid rgba(0,0,0,0.1); background: transparent; font-size: 14px; color: rgba(0,0,0,0.65); outline: none; padding: 6px 0; width: 100%; display: block; -webkit-appearance: none; appearance: none; border-radius: 0; }
-  .ftext { border: none; background: transparent; font-size: 13px; color: rgba(0,0,0,0.6); outline: none; line-height: 1.6; width: 100%; display: block; border-bottom: 1px solid rgba(0,0,0,0.1); padding: 4px 0 6px; margin-bottom: 12px; }
-  .ftext::placeholder { color: rgba(0,0,0,0.28); }
-  .fchecks { display: flex; gap: 14px; margin-bottom: 12px; }
-  .fcheck { display: flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(0,0,0,0.5); }
-  .fcheck input { width: 15px; height: 15px; }
-  .fnote { font-size: 10px; color: rgba(0,0,0,0.32); margin: -6px 0 12px; line-height: 1.5; }
-  .fbtns { display: flex; gap: 8px; }
-  .fbtn { border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
-  .fbtn.del { background: rgba(0,0,0,0.05); color: rgba(0,0,0,0.35); padding: 8px 12px; }
-  .fbtn.cancel { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.45); flex: 1; padding: 8px 0; }
-  .fbtn.save { flex: 2; padding: 8px 0; font-weight: 700; color: rgba(0,0,0,0.6); background: #b8dda0; }
-  .fbtn[disabled] { opacity: .35; cursor: default; }
-
-  .statbars { display: flex; align-items: flex-end; gap: 2px; height: 50px; }
-  .statcol { flex: 1; display: flex; align-items: flex-end; justify-content: center; cursor: pointer; }
-  .statbar { width: 62%; border-radius: 99px 99px 0 0; min-height: 1px; }
-  .statlabels { display: flex; margin-top: 2px; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 3px; }
-  .statlabel { flex: 1; text-align: center; font-size: 8px; color: rgba(0,0,0,0.25); }
-  .statread { font-size: 11px; color: rgba(0,0,0,0.4); min-height: 15px; margin-top: 8px; }
-  .bdrow { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; gap: 10px; }
-  .bdname { font-size: 12px; color: rgba(0,0,0,0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bdamt { font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.55); flex-shrink: 0; }
-  .breakline { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.06); }
-
-  .btnrow { display: flex; gap: 8px; padding: 12px 16px; }
-  .sbtn { flex: 1; background: rgba(0,0,0,0.06); border: none; border-radius: 8px; padding: 9px 0; font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.45); cursor: pointer; text-align: center; display: block; }
-  .note { font-size: 10px; color: rgba(0,0,0,0.28); padding: 0 16px 12px; line-height: 1.5; }
-  .confirmtext { font-size: 12px; color: rgba(0,0,0,0.55); margin-bottom: 12px; line-height: 1.5; }
-  .danger { background: rgba(220,80,80,0.12); color: rgba(180,50,50,0.85); font-weight: 700; }
-  .daysel { border: none; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 7px 4px; font-size: 15px; font-weight: 700; color: rgba(0,0,0,0.6); outline: none; -webkit-appearance: none; appearance: none; min-width: 56px; text-align: center; text-align-last: center; }
-  .statsel { border: none; background: transparent; font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.6); outline: none; -webkit-appearance: none; appearance: none; text-align: center; text-align-last: center; padding: 0 2px; }
-  .okmsg { font-size: 11px; color: rgba(80,140,90,0.9); margin: -2px 0 10px; padding-left: 2px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ライフログ</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#efefef" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Hiragino Kaku Gothic ProN','Hiragino Sans','Meiryo',sans-serif;
+      background: #efefef; color: rgba(0,0,0,0.62); -webkit-font-smoothing: antialiased; }
+    input[type="time"]::-webkit-calendar-picker-indicator { opacity:0; width:100%; position:absolute; left:0; }
+    input[type="time"] { position:relative; }
+    button { -webkit-tap-highlight-color:transparent; }
+    input, textarea { font-family:inherit; }
+    textarea { resize:none; }
+    .scrolltab { display:flex; gap:4px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .scrolltab::-webkit-scrollbar { display:none; }
+  </style>
 </head>
 <body>
 <div id="root"></div>
-<script>
-(function () {
-  "use strict";
-
-  var APP_VERSION = "1.1"; // 設定画面の最後に表示。更新のたびにClaudeが自動で上げる
-
-  /* ---------- IndexedDB ---------- */
-  var DB_NAME = "kakeibo-db", ACC = "accounts", TX = "txs", META = "meta";
-  function openDB() {
-    return new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB_NAME, 3);
-      req.onupgradeneeded = function (e) {
-        var db = e.target.result;
-        if (db.objectStoreNames.contains("entries")) db.deleteObjectStore("entries"); // 旧データ破棄
-        if (!db.objectStoreNames.contains(ACC)) db.createObjectStore(ACC, { keyPath: "id" });
-        if (!db.objectStoreNames.contains(TX)) db.createObjectStore(TX, { keyPath: "id" });
-        if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: "key" });
-      };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
-    });
-  }
-  function dbAll(store) { return openDB().then(function (db) { return new Promise(function (res, rej) {
-    var r = db.transaction(store, "readonly").objectStore(store).getAll();
-    r.onsuccess = function () { res(r.result || []); }; r.onerror = function () { rej(r.error); };
-  }); }); }
-  function dbPut(store, v) { return openDB().then(function (db) { return new Promise(function (res, rej) {
-    var r = db.transaction(store, "readwrite").objectStore(store).put(v);
-    r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); };
-  }); }); }
-  function dbDel(store, id) { return openDB().then(function (db) { return new Promise(function (res, rej) {
-    var r = db.transaction(store, "readwrite").objectStore(store).delete(id);
-    r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); };
-  }); }); }
-  function dbClear(store) { return openDB().then(function (db) { return new Promise(function (res, rej) {
-    var r = db.transaction(store, "readwrite").objectStore(store).clear();
-    r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); };
-  }); }); }
-  function dbGetMeta(key) { return openDB().then(function (db) { return new Promise(function (res, rej) {
-    var r = db.transaction(META, "readonly").objectStore(META).get(key);
-    r.onsuccess = function () { res(r.result ? r.result.value : undefined); }; r.onerror = function () { rej(r.error); };
-  }); }); }
-  function dbSetMeta(key, value) { return dbPut(META, { key: key, value: value }); }
-
-  /* ---------- 定数 ---------- */
-  var TXTYPES = [
-    { key: "income",   label: "収入",     color: "#c2d8f0", dim: "rgba(194,216,240,0.45)" },
-    { key: "transfer", label: "振替",     color: "#b8dda0", dim: "rgba(184,221,160,0.45)" },
-    { key: "expense",  label: "支出",     color: "#f2c0d8", dim: "rgba(242,192,216,0.45)" },
-    { key: "cardpay",  label: "引き落とし", color: "#fbd5ac", dim: "rgba(251,213,172,0.45)" },
-    { key: "adjust",   label: "残高調整",  color: "#d9d9d9", dim: "rgba(0,0,0,0.06)" }
-  ];
-  function txTypeOf(k) { for (var i = 0; i < TXTYPES.length; i++) if (TXTYPES[i].key === k) return TXTYPES[i]; }
-  var ACCTYPES = [
-    { key: "bank",   label: "銀行" },
-    { key: "cash",   label: "現金" },
-    { key: "emoney", label: "電子マネー" },
-    { key: "card",   label: "カード" },
-    { key: "loan",   label: "貸し借り" }
-  ];
-  function accTypeOf(k) { for (var i = 0; i < ACCTYPES.length; i++) if (ACCTYPES[i].key === k) return ACCTYPES[i]; }
-  var CAT_DEFAULTS = ["食費","日用品","家賃","光熱費","通信","医療","交通","交際","娯楽","子ども","その他"];
-  var WD = ["日","月","火","水","木","金","土"];
-
-  /* ---------- helpers ---------- */
-  function pad2(n) { return String(n).padStart(2, "0"); }
-  function todayStr() { var d = new Date(); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
-  function isoOf(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
-  function dateFromISO(iso) { var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
-  function yen(n) { var v = Math.round(Number(n || 0)); return (v < 0 ? "-¥" : "¥") + Math.abs(v).toLocaleString("ja-JP"); }
-  function yenSigned(n) { var v = Math.round(Number(n || 0)); return (v < 0 ? "-¥" : "+¥") + Math.abs(v).toLocaleString("ja-JP"); }
-  function fmtDate(iso) { if (!iso) return ""; var p = iso.split("-"); var dt = new Date(+p[0], +p[1]-1, +p[2]); return (+p[1]) + "月" + (+p[2]) + "日(" + WD[dt.getDay()] + ")"; }
-  function fmtDateFull(iso) { if (!iso) return ""; var p = iso.split("-"); var dt = new Date(+p[0], +p[1]-1, +p[2]); return (+p[0]) + "/" + (+p[1]) + "/" + (+p[2]) + "(" + WD[dt.getDay()] + ")"; }
-  function parseAmount(s) { var n = Math.round(Number(String(s).replace(/[^0-9.-]/g, ""))); return isNaN(n) ? 0 : n; }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]; }); }
-  function el(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
-  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-
-  function periodStart(d, sd) {
-    var y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
-    return (day >= sd) ? new Date(y, m, sd) : new Date(y, m - 1, sd);
-  }
-  function periodEnd(start, sd) { return new Date(start.getFullYear(), start.getMonth() + 1, sd); }
-
-  /* ---------- state ---------- */
-  var now = new Date();
-  var state = {
-    accounts: [],
-    txs: [],
-    active: "home",     // home | history | search | stats | settings
-    lastMain: "home",
-    cursor: periodStart(now, 1),
-    startDay: 1,
-    budget: 0,
-    statsYear: now.getFullYear(),
-    adding: false,
-    addType: "transfer",
-    editingId: null,
-    searchQuery: ""
-  };
-  var MAIN_KEYS = ["home", "history"];
-
-  function accById(id) { return state.accounts.find(function (a) { return a.id === id; }); }
-  function accName(id) { var a = accById(id); return a ? a.name : "（削除済み）"; }
-  function accsOfType(t) { return state.accounts.filter(function (a) { return a.type === t; }); }
-  function nonCardAccs() { return state.accounts.filter(function (a) { return a.type !== "card"; }); }
-  function assetAccs() { return state.accounts.filter(function (a) { return a.type === "bank" || a.type === "cash" || a.type === "emoney"; }); }
-  function sortAccounts() {
-    state.accounts.sort(function (a, b) {
-      var oa = (typeof a.order === "number") ? a.order : 1e9, ob = (typeof b.order === "number") ? b.order : 1e9;
-      if (oa !== ob) return oa - ob;
-      return (a.createdAt || 0) - (b.createdAt || 0);
-    });
-  }
-  function ensureOrder() {
-    state.accounts.forEach(function (a, i) { if (typeof a.order !== "number") { a.order = i; dbPut(ACC, a); } });
-  }
-  function moveAccount(id, dir) {
-    sortAccounts();
-    var i = state.accounts.findIndex(function (a) { return a.id === id; });
-    var j = i + dir;
-    if (i < 0 || j < 0 || j >= state.accounts.length) return;
-    var a = state.accounts[i], b = state.accounts[j];
-    var tmp = a.order; a.order = b.order; b.order = tmp;
-    dbPut(ACC, a); dbPut(ACC, b);
-    sortAccounts();
-    renderSettings();
-  }
-
-  /* ---------- 残高計算 ---------- */
-  function balances() {
-    var map = {};
-    state.accounts.forEach(function (a) { map[a.id] = a.initBalance || 0; });
-    state.txs.forEach(function (t) {
-      var amt = t.amount || 0;
-      if (t.type === "income") { if (map[t.toId] != null) map[t.toId] += amt; }
-      else if (t.type === "transfer") { if (map[t.fromId] != null) map[t.fromId] -= amt; if (map[t.toId] != null) map[t.toId] += amt; }
-      else if (t.type === "expense") {
-        var a = accById(t.fromId);
-        if (map[t.fromId] != null) map[t.fromId] += (a && a.type === "card") ? amt : -amt;
-      }
-      else if (t.type === "cardpay") { if (map[t.fromId] != null) map[t.fromId] -= amt; if (map[t.toId] != null) map[t.toId] -= amt; }
-      else if (t.type === "adjust") { if (map[t.toId] != null) map[t.toId] += amt; }
-    });
-    return map;
-  }
-  function walletTotal(bal) {
-    var s = 0;
-    state.accounts.forEach(function (a) { if (a.wallet && !a.hidden && a.type !== "card") s += (bal[a.id] || 0); });
-    return s;
-  }
-  function periodVarExpense() {
-    var start = state.cursor, end = periodEnd(start, state.startDay), s = 0;
-    state.txs.forEach(function (t) {
-      if (t.type === "expense" && !t.fixed && t.date) {
-        var dt = dateFromISO(t.date);
-        if (dt >= start && dt < end) s += (t.amount || 0);
-      }
-    });
-    return s;
-  }
-
-  /* ---------- 履歴の集合 ---------- */
-  function periodTxs() {
-    var start = state.cursor, end = periodEnd(start, state.startDay);
-    return state.txs.filter(function (t) {
-      if (!t.date) return false;
-      var dt = dateFromISO(t.date);
-      return dt >= start && dt < end;
-    }).sort(function (x, y) { return x.date === y.date ? (y.createdAt - x.createdAt) : (x.date < y.date ? 1 : -1); });
-  }
-  function usedCategories() {
-    var set = {};
-    CAT_DEFAULTS.forEach(function (c) { set[c] = 1; });
-    state.txs.forEach(function (t) { if (t.type === "expense" && t.category) set[t.category] = 1; });
-    return Object.keys(set);
-  }
-
-  /* ---------- DOM ---------- */
-  var root = document.getElementById("root");
-  var secBtns = {}, tabBtns = {};
-  var scrollTabEl, homeEl, histNav, histMonthLabel, histList, addArea;
-  var searchEl, searchInput, clearBtn, searchResults, statsEl, settingsEl;
-
-  function buildShell() {
-    var col = el('<div class="col"></div>');
-
-    var header = el('<div class="header"></div>');
-    var hbody = el('<div style="flex:1;min-width:0"></div>');
-    hbody.appendChild(el('<h1 class="title">家計簿</h1>'));
-    var sub = el('<p class="subdate"></p>');
-    sub.textContent = new Date().toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
-    hbody.appendChild(sub);
-    header.appendChild(hbody);
-    var sectabs = el('<div class="sectabs"></div>');
-    [["main","ホーム"],["search","検索"],["stats","統計"],["settings","設定"]].forEach(function (p) {
-      var b = el('<button class="sectab">' + p[1] + '</button>');
-      b.onclick = function () { setActive(p[0] === "main" ? state.lastMain : p[0]); };
-      secBtns[p[0]] = b; sectabs.appendChild(b);
-    });
-    header.appendChild(sectabs);
-    col.appendChild(header);
-
-    scrollTabEl = el('<div class="scrolltab"></div>');
-    [["home","ホーム"],["history","履歴"]].forEach(function (p) {
-      var b = el('<button class="tab">' + p[1] + '</button>');
-      b.onclick = function () { setActive(p[0]); };
-      tabBtns[p[0]] = b; scrollTabEl.appendChild(b);
-    });
-    col.appendChild(scrollTabEl);
-
-    addArea = el('<div></div>');
-    col.appendChild(addArea);
-
-    homeEl = el('<div></div>');
-    col.appendChild(homeEl);
-
-    var hist = el('<div></div>');
-    histNav = el('<div class="monthnav"></div>');
-    var prev = el('<button class="nb">\u2039</button>');
-    var next = el('<button class="nb">\u203A</button>');
-    histMonthLabel = el('<div class="mlabel"></div>');
-    prev.onclick = function () { closeForms(); state.cursor = new Date(state.cursor.getFullYear(), state.cursor.getMonth() - 1, state.startDay); renderView(); };
-    next.onclick = function () { closeForms(); state.cursor = new Date(state.cursor.getFullYear(), state.cursor.getMonth() + 1, state.startDay); renderView(); };
-    histNav.appendChild(prev); histNav.appendChild(histMonthLabel); histNav.appendChild(next);
-    hist.appendChild(histNav);
-    histList = el('<div></div>');
-    hist.appendChild(histList);
-    hist.style.display = "none";
-    col.appendChild(hist);
-    homeEl._histWrap = hist;
-
-    // 検索ページ
-    searchEl = el('<div style="display:none"></div>');
-    var scard = el('<div class="card searchcard"></div>');
-    var scpad = el('<div class="cardpad"></div>');
-    searchInput = el('<input class="searchinp" type="text" placeholder="すべての記録を検索" enterkeyhint="search" autocomplete="off" />');
-    clearBtn = el('<button class="clr">\u2715</button>');
-    searchInput.addEventListener("input", function () {
-      state.searchQuery = searchInput.value;
-      clearBtn.style.display = searchInput.value ? "flex" : "none";
-      renderSearchResults();
-    });
-    clearBtn.onclick = function () { searchInput.value = ""; state.searchQuery = ""; clearBtn.style.display = "none"; renderSearchResults(); searchInput.focus(); };
-    scpad.appendChild(searchInput); scpad.appendChild(clearBtn);
-    scard.appendChild(scpad);
-    searchResults = el('<div></div>');
-    searchEl.appendChild(scard); searchEl.appendChild(searchResults);
-    col.appendChild(searchEl);
-
-    statsEl = el('<div style="display:none"></div>');
-    col.appendChild(statsEl);
-    settingsEl = el('<div style="display:none"></div>');
-    col.appendChild(settingsEl);
-
-    root.appendChild(col);
-  }
-
-  function closeForms() { state.adding = false; state.editingId = null; }
-  function setActive(key) {
-    closeForms();
-    state.active = key;
-    if (MAIN_KEYS.indexOf(key) >= 0) state.lastMain = key;
-    renderView();
-  }
-
-  function renderView() {
-    var isMain = MAIN_KEYS.indexOf(state.active) >= 0;
-    scrollTabEl.style.display = isMain ? "" : "none";
-    addArea.style.display = isMain ? "" : "none";
-    homeEl.style.display = state.active === "home" ? "" : "none";
-    homeEl._histWrap.style.display = state.active === "history" ? "" : "none";
-    searchEl.style.display = state.active === "search" ? "" : "none";
-    statsEl.style.display = state.active === "stats" ? "" : "none";
-    settingsEl.style.display = state.active === "settings" ? "" : "none";
-
-    secBtns.main.classList.toggle("active", isMain);
-    secBtns.search.classList.toggle("active", state.active === "search");
-    secBtns.stats.classList.toggle("active", state.active === "stats");
-    secBtns.settings.classList.toggle("active", state.active === "settings");
-    if (isMain) MAIN_KEYS.forEach(function (k) { tabBtns[k].classList.toggle("active", k === state.active); });
-
-    if (isMain) { renderAddArea(); if (state.active === "home") renderHome(); else renderHistory(); }
-    else if (state.active === "search") { renderSearchResults(); searchInput.focus(); }
-    else if (state.active === "stats") renderStats();
-    else if (state.active === "settings") renderSettings();
-  }
-
-  /* ---------- 記録フォーム ---------- */
-  function renderAddArea() {
-    addArea.innerHTML = "";
-    if (!state.adding) {
-      var b = el('<button class="addbtn">＋ 記録する</button>');
-      b.onclick = function () {
-        if (!state.accounts.length) { setActive("settings"); return; }
-        state.adding = true; renderAddArea();
-      };
-      addArea.appendChild(b);
-      return;
-    }
-    var card = el('<div class="card"></div>');
-    var pad = el('<div class="formpad"></div>');
-
-    var tsel = el('<div class="typesel"></div>');
-    TXTYPES.forEach(function (t) {
-      var p = el('<button class="typepill">' + t.label + '</button>');
-      if (t.key === state.addType) { p.classList.add("active"); p.style.background = t.dim; }
-      p.onclick = function () { state.addType = t.key; renderAddArea(); };
-      tsel.appendChild(p);
-    });
-    pad.appendChild(tsel);
-
-    var form = buildTxForm({
-      type: state.addType, tx: null, submitLabel: "記録",
-      onSave: function (tx) {
-        state.txs.push(tx); dbPut(TX, tx);
-        state.adding = false; renderView();
-      },
-      onCancel: function () { state.adding = false; renderAddArea(); }
-    });
-    pad.appendChild(form);
-    card.appendChild(pad);
-    addArea.appendChild(card);
-  }
-
-  function accSelect(list, selectedId, placeholder) {
-    var sel = el('<select class="fsel"></select>');
-    sel.appendChild(el('<option value="">' + esc(placeholder || "選択してください") + '</option>'));
-    list.forEach(function (a) {
-      var o = el('<option value="' + esc(a.id) + '">' + esc(a.name) + '（' + accTypeOf(a.type).label + '）</option>');
-      if (a.id === selectedId) o.setAttribute("selected", "");
-      sel.appendChild(o);
-    });
-    return sel;
-  }
-
-  function buildTxForm(opts) {
-    var type = opts.type, tx = opts.tx;
-    var tdef = txTypeOf(type);
-    var wrap = el('<div></div>');
-    var bal = balances();
-
-    var start = state.cursor, end = periodEnd(start, state.startDay);
-    var t0 = new Date(); t0.setHours(0,0,0,0);
-    var defDate = tx ? tx.date : ((state.active !== "history" || (t0 >= start && t0 < end)) ? todayStr() : isoOf(start));
-
-    var row1 = el('<div class="frow"></div>');
-    var df = el('<div class="ffield"><div class="flabel">日付</div></div>');
-    var dateInp = el('<input class="finp" type="date" />'); dateInp.value = defDate;
-    df.appendChild(dateInp); row1.appendChild(df);
-
-    var amtInp = null;
-    if (type !== "adjust") {
-      var af = el('<div class="ffield amt"><div class="flabel">金額</div></div>');
-      amtInp = el('<input class="finp amt" type="number" inputmode="numeric" placeholder="0" />');
-      if (tx && tx.amount) amtInp.value = tx.amount;
-      af.appendChild(amtInp); row1.appendChild(af);
-    }
-    wrap.appendChild(row1);
-
-    var fromSel = null, toSel = null, catInp = null, fixedChk = null, impChk = null, actualInp = null, adjNote = null;
-
-    function fieldRow(label, node) {
-      var f = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">' + label + '</div></div>');
-      f.appendChild(node); return f;
-    }
-
-    if (type === "income") {
-      toSel = accSelect(assetAccs(), tx ? tx.toId : "", "入金先の口座");
-      wrap.appendChild(fieldRow("入金先", toSel));
-    } else if (type === "transfer") {
-      fromSel = accSelect(nonCardAccs(), tx ? tx.fromId : "", "出金元の口座");
-      toSel = accSelect(nonCardAccs(), tx ? tx.toId : "", "入金先の口座");
-      wrap.appendChild(fieldRow("出金元", fromSel));
-      wrap.appendChild(fieldRow("入金先（チャージ先）", toSel));
-    } else if (type === "expense") {
-      fromSel = accSelect(state.accounts, tx ? tx.fromId : "", "支払いに使った口座");
-      wrap.appendChild(fieldRow("支払い", fromSel));
-      catInp = el('<input class="finp" type="text" list="catlist" placeholder="食費、日用品 など" />');
-      if (tx) catInp.value = tx.category || "";
-      var dl = el('<datalist id="catlist"></datalist>');
-      usedCategories().forEach(function (c) { dl.appendChild(el('<option value="' + esc(c) + '"></option>')); });
-      var cf = fieldRow("項目", catInp); cf.appendChild(dl);
-      wrap.appendChild(cf);
-      var checks = el('<div class="fchecks"></div>');
-      var l1 = el('<label class="fcheck"><input type="checkbox" />固定費</label>');
-      var l2 = el('<label class="fcheck"><input type="checkbox" />重要（記憶しておく）</label>');
-      fixedChk = l1.querySelector("input"); impChk = l2.querySelector("input");
-      if (tx) { fixedChk.checked = !!tx.fixed; impChk.checked = !!tx.important; }
-      checks.appendChild(l1); checks.appendChild(l2);
-      wrap.appendChild(checks);
-    } else if (type === "cardpay") {
-      var banks = accsOfType("bank");
-      fromSel = accSelect(banks.length ? banks : nonCardAccs(), tx ? tx.fromId : "", "引き落とし口座");
-      toSel = accSelect(accsOfType("card"), tx ? tx.toId : "", "カード");
-      wrap.appendChild(fieldRow("引き落とし口座", fromSel));
-      wrap.appendChild(fieldRow("カード", toSel));
-    } else if (type === "adjust") {
-      toSel = accSelect(state.accounts, tx ? tx.toId : "", "調整する口座");
-      wrap.appendChild(fieldRow("口座", toSel));
-      if (!tx) {
-        actualInp = el('<input class="finp amt" type="number" inputmode="numeric" placeholder="0" />');
-        wrap.appendChild(fieldRow("実際の残高", actualInp));
-        adjNote = el('<p class="fnote"></p>');
-        wrap.appendChild(adjNote);
-        function updAdj() {
-          var a = accById(toSel.value);
-          if (!a) { adjNote.textContent = ""; return; }
-          var cur = bal[a.id] || 0;
-          var v = parseAmount(actualInp.value);
-          adjNote.textContent = "現在の残高 " + yen(cur) + (actualInp.value !== "" ? (" → 調整 " + yenSigned(v - cur)) : "");
-        }
-        toSel.addEventListener("change", updAdj);
-        actualInp.addEventListener("input", updAdj);
-        updAdj();
-      } else {
-        wrap.appendChild(el('<p class="fnote">調整額：' + yenSigned(tx.amount) + '（金額の変更はこの記録を削除して調整し直してください）</p>'));
-      }
-    }
-
-    var memoInp = el('<textarea class="ftext" rows="2" placeholder="メモ（任意）"></textarea>');
-    if (tx) memoInp.value = tx.memo || "";
-    wrap.appendChild(memoInp);
-
-    var btns = el('<div class="fbtns"></div>');
-    if (opts.onDelete) { var d = el('<button class="fbtn del">削除</button>'); d.onclick = opts.onDelete; btns.appendChild(d); }
-    var c = el('<button class="fbtn cancel">キャンセル</button>'); c.onclick = opts.onCancel; btns.appendChild(c);
-    var s = el('<button class="fbtn save">' + opts.submitLabel + '</button>'); s.style.background = tdef.color;
-    s.onclick = function () {
-      var date = dateInp.value || defDate;
-      var memo = memoInp.value.trim();
-      var out;
-      if (type === "income") {
-        if (!toSel.value) { toSel.focus(); return; }
-        var a1 = parseAmount(amtInp.value); if (a1 <= 0) { amtInp.focus(); return; }
-        out = { type: "income", toId: toSel.value, amount: a1 };
-      } else if (type === "transfer") {
-        if (!fromSel.value) { fromSel.focus(); return; }
-        if (!toSel.value || toSel.value === fromSel.value) { toSel.focus(); return; }
-        var a2 = parseAmount(amtInp.value); if (a2 <= 0) { amtInp.focus(); return; }
-        out = { type: "transfer", fromId: fromSel.value, toId: toSel.value, amount: a2 };
-      } else if (type === "expense") {
-        if (!fromSel.value) { fromSel.focus(); return; }
-        var a3 = parseAmount(amtInp.value); if (a3 <= 0) { amtInp.focus(); return; }
-        out = { type: "expense", fromId: fromSel.value, amount: a3, category: catInp.value.trim(), fixed: fixedChk.checked, important: impChk.checked };
-      } else if (type === "cardpay") {
-        if (!fromSel.value) { fromSel.focus(); return; }
-        if (!toSel.value) { toSel.focus(); return; }
-        var a4 = parseAmount(amtInp.value); if (a4 <= 0) { amtInp.focus(); return; }
-        out = { type: "cardpay", fromId: fromSel.value, toId: toSel.value, amount: a4 };
-      } else if (type === "adjust") {
-        if (!toSel.value) { toSel.focus(); return; }
-        if (tx) { out = { type: "adjust", toId: toSel.value, amount: tx.amount }; }
-        else {
-          if (actualInp.value === "") { actualInp.focus(); return; }
-          var cur = bal[toSel.value] || 0;
-          var delta = parseAmount(actualInp.value) - cur;
-          out = { type: "adjust", toId: toSel.value, amount: delta };
-        }
-      }
-      out.id = tx ? tx.id : uid();
-      out.date = date; out.memo = memo;
-      out.createdAt = tx ? tx.createdAt : Date.now();
-      opts.onSave(out);
-    };
-    btns.appendChild(s);
-    wrap.appendChild(btns);
-    return wrap;
-  }
-
-  /* ---------- ホーム ---------- */
-  function renderHome() {
-    homeEl.innerHTML = "";
-    var bal = balances();
-
-    if (!state.accounts.length) {
-      var g = el('<div class="card"><div class="formpad"><p class="confirmtext">まず「設定」から口座（銀行・現金・電子マネー・カード・貸し借り）を追加して、現在の残高を入れてください。</p></div></div>');
-      var gb = el('<button class="sbtn" style="margin:0 16px 14px;width:calc(100% - 32px)">設定を開く</button>');
-      gb.onclick = function () { setActive("settings"); };
-      g.appendChild(gb);
-      homeEl.appendChild(g);
-      return;
-    }
-
-    // 生活費予算（変動費で減る）／なければ残高
-    var wallets = state.accounts.filter(function (a) { return a.wallet && !a.hidden && a.type !== "card"; });
-    var wcard = el('<div class="card"></div>');
-    var wpad = el('<div class="cardpad"></div>');
-    var wbar = el('<div class="bar" style="min-height:42px;background:#b8dda0"></div>');
-    var wbody = el('<div class="body"></div>');
-    var walletBal = walletTotal(bal);
-    if (state.budget > 0) {
-      var spent = periodVarExpense();
-      var left = state.budget - spent;
-      wbody.appendChild(el('<div class="seclbl" style="margin:0 0 6px">生活費予算のこり</div>'));
-      wbody.appendChild(el('<div class="total">' + yen(left) + '<small>/ 予算 ' + yen(state.budget) + '</small></div>'));
-      var pct = Math.max(0, Math.min(100, Math.round(left / state.budget * 100)));
-      var barI = el('<div class="budgetbar"><div style="width:' + pct + '%"></div></div>');
-      if (left <= 0) barI.querySelector("div").style.background = "#f2c0d8";
-      else if (left / state.budget < 0.2) barI.querySelector("div").style.background = "#fbd5ac";
-      wbody.appendChild(barI);
-      wbody.appendChild(el('<div class="subnote">このサイクルの変動費 ' + yen(spent) + (wallets.length ? '　｜　生活費残高 ' + yen(walletBal) : '') + '</div>'));
-    } else {
-      wbody.appendChild(el('<div class="seclbl" style="margin:0 0 6px">生活費のこり</div>'));
-      if (!wallets.length) {
-        wbody.appendChild(el('<p class="confirmtext" style="margin:0">設定で予算を決めると、変動費で減るバーを表示します。口座編集の「生活費に含める」で残高合計も出せます。</p>'));
-      } else {
-        wbody.appendChild(el('<div class="total">' + yen(walletBal) + '</div>'));
-        wbody.appendChild(el('<div class="subnote">' + wallets.map(function (a) { return esc(a.name) + " " + yen(bal[a.id] || 0); }).join("　") + '</div>'));
-      }
-    }
-    wpad.appendChild(wbar); wpad.appendChild(wbody); wcard.appendChild(wpad);
-    homeEl.appendChild(wcard);
-
-    // 口座残高（種類ごと）
-    ACCTYPES.forEach(function (at) {
-      var list = accsOfType(at.key).filter(function (a) { return !a.hidden; });
-      if (!list.length) return;
-      var card = el('<div class="card"></div>');
-      var pad = el('<div class="cardpad"></div>');
-      var barColor = at.key === "card" ? "#fbd5ac" : (at.key === "bank" ? "#c2d8f0" : (at.key === "cash" ? "#b8dda0" : (at.key === "loan" ? "#d9d9d9" : "#f2c0d8")));
-      var bar = el('<div class="bar" style="min-height:42px"></div>'); bar.style.background = barColor;
-      var body = el('<div class="body"></div>');
-      body.appendChild(el('<div class="seclbl" style="margin:0 0 4px">' + at.label + (at.key === "card" ? '（未払い）' : '') + '</div>'));
-      list.forEach(function (a) {
-        var row = el('<div class="accrow"></div>');
-        row.appendChild(el('<span class="accname">' + esc(a.name) + '</span>'));
-        if (a.wallet && a.type !== "card") row.appendChild(el('<span class="wtag">生活費</span>'));
-        var v = bal[a.id] || 0;
-        if (at.key === "loan" && v !== 0) {
-          row.appendChild(el('<span class="rtag2" style="margin-left:auto;flex-shrink:0;background:' + (v > 0 ? "rgba(184,221,160,0.45)" : "rgba(242,192,216,0.45)") + '">' + (v > 0 ? "貸し" : "借り") + '</span>'));
-          row.appendChild(el('<span class="accbal" style="margin-left:8px">' + yen(Math.abs(v)) + '</span>'));
-        } else {
-          row.appendChild(el('<span class="accbal">' + yen(v) + '</span>'));
-        }
-        body.appendChild(row);
-        if (a.type === "card" && a.payDay) {
-          body.appendChild(el('<div class="subnote">毎月' + a.payDay + '日ごろ引き落とし' + (a.payFrom ? '（' + esc(accName(a.payFrom)) + '）' : '') + '</div>'));
-        }
-      });
-      pad.appendChild(bar); pad.appendChild(body); card.appendChild(pad);
-      homeEl.appendChild(card);
-    });
-  }
-
-  /* ---------- 履歴 ---------- */
-  function renderHistMonth() {
-    var sd = state.startDay, start = state.cursor, end = periodEnd(start, sd);
-    var t = new Date(); t.setHours(0, 0, 0, 0);
-    var isThis = (t >= start && t < end);
-    var html = '<span>' + start.getFullYear() + "年" + (start.getMonth() + 1) + "月</span>" + (isThis ? '<small>今月</small>' : "");
-    if (sd !== 1) {
-      var last = new Date(end.getTime() - 86400000);
-      html += '<div style="font-size:10px;color:rgba(0,0,0,0.3);margin-top:1px">' + (start.getMonth() + 1) + '/' + start.getDate() + '〜' + (last.getMonth() + 1) + '/' + last.getDate() + '</div>';
-    }
-    histMonthLabel.innerHTML = html;
-  }
-
-  function txCard(t, opts) {
-    var tdef = txTypeOf(t.type);
-    var card = el('<div class="card"' + (opts && opts.clickable ? ' style="cursor:pointer"' : '') + '></div>');
-    var pad = el('<div class="cardpad"></div>');
-    var bar = el('<div class="bar"></div>'); bar.style.background = tdef.color;
-    var body = el('<div class="body"></div>');
-
-    var top = el('<div class="toprow"></div>');
-    var tag = el('<span class="rtag">' + tdef.label + '</span>'); tag.style.background = tdef.dim;
-    top.appendChild(tag);
-    if (t.type === "expense" && t.fixed) top.appendChild(el('<span class="rtag2">固定</span>'));
-    if (t.type === "expense" && t.important) top.appendChild(el('<span class="rtag2">★</span>'));
-    top.appendChild(el('<span class="rdate">' + (opts && opts.fullDate ? fmtDateFull(t.date) : fmtDate(t.date)) + '</span>'));
-    top.appendChild(el('<div class="grow"></div>'));
-    var amtStr = t.type === "adjust" ? yenSigned(t.amount) : yen(t.amount);
-    top.appendChild(el('<span class="ramt">' + amtStr + '</span>'));
-    if (opts && opts.onEdit) {
-      var eb = el('<button class="editbtn">編集</button>');
-      eb.onclick = function (ev) { ev.stopPropagation(); opts.onEdit(); };
-      top.appendChild(eb);
-    }
-    body.appendChild(top);
-
-    var line = "";
-    if (t.type === "income") line = "→ " + esc(accName(t.toId));
-    else if (t.type === "transfer") line = esc(accName(t.fromId)) + " → " + esc(accName(t.toId));
-    else if (t.type === "expense") line = esc(accName(t.fromId)) + (t.category ? "　" + esc(t.category) : "");
-    else if (t.type === "cardpay") line = esc(accName(t.fromId)) + " → " + esc(accName(t.toId));
-    else if (t.type === "adjust") line = esc(accName(t.toId));
-    if (line) body.appendChild(el('<div class="rparty">' + line + '</div>'));
-    if (t.memo) body.appendChild(el('<div class="rmemo">' + esc(t.memo) + '</div>'));
-
-    pad.appendChild(bar); pad.appendChild(body); card.appendChild(pad);
-    if (opts && opts.clickable && opts.onClick) card.onclick = opts.onClick;
-    return card;
-  }
-
-  function renderHistory() {
-    renderHistMonth();
-    var list = periodTxs();
-    histList.innerHTML = "";
-    if (!list.length) {
-      histList.appendChild(el('<div class="empty">この期間の記録はありません</div>'));
-      return;
-    }
-    list.forEach(function (t) {
-      if (state.editingId === t.id) {
-        var card = el('<div class="card"></div>');
-        var pad = el('<div class="formpad"></div>');
-        pad.appendChild(el('<div class="seclbl" style="margin:0 0 10px">' + txTypeOf(t.type).label + 'を編集</div>'));
-        pad.appendChild(buildTxForm({
-          type: t.type, tx: t, submitLabel: "保存",
-          onSave: function (nt) {
-            var i = state.txs.findIndex(function (x) { return x.id === t.id; });
-            if (i >= 0) state.txs[i] = nt;
-            dbPut(TX, nt);
-            state.editingId = null; renderView();
-          },
-          onCancel: function () { state.editingId = null; renderHistory(); },
-          onDelete: function () {
-            dbDel(TX, t.id).then(function () {
-              state.txs = state.txs.filter(function (x) { return x.id !== t.id; });
-              state.editingId = null; renderView();
-            });
-          }
-        }));
-        card.appendChild(pad);
-        histList.appendChild(card);
-      } else {
-        histList.appendChild(txCard(t, { onEdit: function () { state.adding = false; state.editingId = t.id; renderAddArea(); renderHistory(); } }));
-      }
-    });
-  }
-
-  /* ---------- 検索 ---------- */
-  function renderSearchResults() {
-    var q = state.searchQuery.trim().toLowerCase();
-    searchResults.innerHTML = "";
-    if (!q) {
-      searchResults.appendChild(el('<div class="empty">キーワードを入力すると、すべての記録から検索します</div>'));
-      return;
-    }
-    var hits = state.txs.filter(function (t) {
-      var names = [accName(t.fromId || ""), accName(t.toId || "")].join(" ").toLowerCase();
-      return (t.memo || "").toLowerCase().indexOf(q) >= 0 ||
-             (t.category || "").toLowerCase().indexOf(q) >= 0 ||
-             String(t.amount).indexOf(q) >= 0 ||
-             names.indexOf(q) >= 0 ||
-             txTypeOf(t.type).label.indexOf(q) >= 0;
-    }).sort(function (a, b) { return a.date === b.date ? b.createdAt - a.createdAt : (a.date < b.date ? 1 : -1); });
-    if (!hits.length) {
-      searchResults.appendChild(el('<div class="empty">該当する記録はありません</div>'));
-      return;
-    }
-    searchResults.appendChild(el('<div class="seclbl" style="margin:2px 2px 8px">' + hits.length + '件</div>'));
-    hits.forEach(function (t) {
-      searchResults.appendChild(txCard(t, {
-        fullDate: true, clickable: true,
-        onClick: function () {
-          closeForms();
-          state.cursor = periodStart(dateFromISO(t.date), state.startDay);
-          state.active = "history"; state.lastMain = "history";
-          renderView(); window.scrollTo(0, 0);
-        }
-      }));
-    });
-  }
-
-  /* ---------- 統計 ---------- */
-  function renderStats() {
-    statsEl.innerHTML = "";
-    var sd = state.startDay;
-    if (!state.statsCursor) state.statsCursor = periodStart(new Date(), sd);
-    var sc = state.statsCursor;
-    var selYear = sc.getFullYear(), selMonth = sc.getMonth();
-    function periodKey(t) { var ps = periodStart(dateFromISO(t.date), sd); return { y: ps.getFullYear(), m: ps.getMonth() }; }
-
-    // 月ナビ（‹ › で前後、ラベルの年・月プルダウンで自由移動）
-    var nav = el('<div class="monthnav"></div>');
-    var prev = el('<button class="nb">\u2039</button>');
-    var next = el('<button class="nb">\u203A</button>');
-    var end = periodEnd(sc, sd), last = new Date(end.getTime() - 86400000);
-    var lbl = el('<div class="mlabel"></div>');
-    var picker = el('<div style="display:flex;align-items:center;justify-content:center;gap:2px"></div>');
-    var minY = selYear - 5, maxY = new Date().getFullYear();
-    state.txs.forEach(function (t) { if (t.date) { var y = +t.date.slice(0, 4); if (y < minY) minY = y; } });
-    var ysel = el('<select class="statsel"></select>');
-    for (var yy = maxY; yy >= minY; yy--) { var yo = el('<option value="' + yy + '">' + yy + '</option>'); if (yy === selYear) yo.setAttribute("selected", ""); ysel.appendChild(yo); }
-    var msel = el('<select class="statsel"></select>');
-    for (var mm = 0; mm < 12; mm++) { var mo = el('<option value="' + mm + '">' + (mm + 1) + '</option>'); if (mm === selMonth) mo.setAttribute("selected", ""); msel.appendChild(mo); }
-    picker.appendChild(ysel); picker.appendChild(el('<span style="font-size:12px;color:rgba(0,0,0,0.5)">年</span>'));
-    picker.appendChild(msel); picker.appendChild(el('<span style="font-size:12px;color:rgba(0,0,0,0.5)">月</span>'));
-    ysel.onchange = function () { state.statsCursor = new Date(+ysel.value, selMonth, sd); renderStats(); };
-    msel.onchange = function () { state.statsCursor = new Date(selYear, +msel.value, sd); renderStats(); };
-    lbl.appendChild(picker);
-    if (sd !== 1) lbl.appendChild(el('<div style="font-size:10px;color:rgba(0,0,0,0.3);margin-top:1px">' + (sc.getMonth() + 1) + '/' + sc.getDate() + '〜' + (last.getMonth() + 1) + '/' + last.getDate() + '</div>'));
-    prev.onclick = function () { state.statsCursor = new Date(selYear, selMonth - 1, sd); renderStats(); };
-    next.onclick = function () { state.statsCursor = new Date(selYear, selMonth + 1, sd); renderStats(); };
-    nav.appendChild(prev); nav.appendChild(lbl); nav.appendChild(next);
-    statsEl.appendChild(nav);
-
-    // 収入・支出の月別棒グラフ（選択月の年・選択月を強調）
-    [{ key: "income", label: "収入", color: "#c2d8f0" }, { key: "expense", label: "支出", color: "#f2c0d8" }].forEach(function (def) {
-      var totals = new Array(12).fill(0);
-      state.txs.forEach(function (t) {
-        if (t.type !== def.key || !t.date) return;
-        var pk = periodKey(t);
-        if (pk.y === selYear) totals[pk.m] += (t.amount || 0);
-      });
-      var max = Math.max.apply(null, totals.concat([1]));
-      var monthVal = totals[selMonth];
-
-      var card = el('<div class="card"></div>');
-      var pad = el('<div class="cardpad"></div>');
-      var bar = el('<div class="bar" style="min-height:42px"></div>'); bar.style.background = def.color;
-      var body = el('<div class="body"></div>');
-      body.appendChild(el('<div class="seclbl" style="margin:0 0 4px">' + def.label + '（' + (selMonth + 1) + '月）</div>'));
-      body.appendChild(el('<div class="total" style="font-size:22px">' + yen(monthVal) + '<small>' + selYear + '年 月別</small></div>'));
-      var read = el('<div class="statread"></div>');
-      read.textContent = "棒をタップで各月の額（水色＝選択中の月）";
-      var bars = el('<div class="statbars"></div>');
-      totals.forEach(function (v, i) {
-        var colEl = el('<div class="statcol"></div>');
-        var b = el('<div class="statbar"></div>');
-        var isSel = (i === selMonth);
-        if (v > 0) { b.style.background = isSel ? "#7fb0d8" : def.color; b.style.height = Math.max(3, Math.round(v / max * 50)) + "px"; }
-        else { b.style.background = isSel ? "rgba(127,176,216,0.5)" : "rgba(0,0,0,0.06)"; b.style.height = isSel ? "3px" : "1px"; }
-        colEl.onclick = function () { state.statsCursor = new Date(selYear, i, sd); renderStats(); };
-        colEl.appendChild(b); bars.appendChild(colEl);
-      });
-      var labels = el('<div class="statlabels"></div>');
-      for (var m2 = 1; m2 <= 12; m2++) { var lb = el('<div class="statlabel">' + m2 + '</div>'); if (m2 - 1 === selMonth) { lb.style.color = "rgba(0,0,0,0.55)"; lb.style.fontWeight = "700"; } labels.appendChild(lb); }
-      body.appendChild(read); body.appendChild(bars); body.appendChild(labels);
-      pad.appendChild(bar); pad.appendChild(body); card.appendChild(pad);
-      statsEl.appendChild(card);
-    });
-
-    // 支出の内訳（選択月・項目別・固定/変動）
-    var exp = state.txs.filter(function (t) { if (t.type !== "expense" || !t.date) return false; var pk = periodKey(t); return pk.y === selYear && pk.m === selMonth; });
-    var card2 = el('<div class="card"></div>');
-    var pad2 = el('<div class="cardpad"></div>');
-    var bar2 = el('<div class="bar" style="min-height:42px;background:#f2c0d8"></div>');
-    var body2 = el('<div class="body"></div>');
-    body2.appendChild(el('<div class="seclbl" style="margin:0 0 4px">支出の内訳（' + (selMonth + 1) + '月）</div>'));
-    if (!exp.length) {
-      body2.appendChild(el('<div class="empty" style="padding:14px 0">この月に記録された支出はありません</div>'));
-    } else {
-      var fixedSum = 0, varSum = 0, catMap = {};
-      exp.forEach(function (t) {
-        if (t.fixed) fixedSum += t.amount; else varSum += t.amount;
-        var k = t.category || "（項目なし）";
-        catMap[k] = (catMap[k] || 0) + t.amount;
-      });
-      body2.appendChild(el('<div class="bdrow"><span class="bdname">固定費</span><span class="bdamt">' + yen(fixedSum) + '</span></div>'));
-      body2.appendChild(el('<div class="bdrow"><span class="bdname">変動費</span><span class="bdamt">' + yen(varSum) + '</span></div>'));
-      var bd = el('<div class="breakline"></div>');
-      Object.keys(catMap).map(function (k) { return [k, catMap[k]]; })
-        .sort(function (a, b) { return b[1] - a[1]; })
-        .forEach(function (r) { bd.appendChild(el('<div class="bdrow"><span class="bdname">' + esc(r[0]) + '</span><span class="bdamt">' + yen(r[1]) + '</span></div>')); });
-      body2.appendChild(bd);
-      body2.appendChild(el('<div class="subnote" style="margin-top:8px">※記録した支出のみ。記録していない生活費は含みません</div>'));
-    }
-    pad2.appendChild(bar2); pad2.appendChild(body2); card2.appendChild(pad2);
-    statsEl.appendChild(card2);
-
-    // ★ 重要な支出（選択月）
-    var imp = state.txs.filter(function (t) { if (t.type !== "expense" || !t.important || !t.date) return false; var pk = periodKey(t); return pk.y === selYear && pk.m === selMonth; })
-      .sort(function (a, b) { return a.date === b.date ? b.createdAt - a.createdAt : (a.date < b.date ? 1 : -1); });
-    if (imp.length) {
-      var card3 = el('<div class="card"></div>');
-      var pad3 = el('<div class="cardpad"></div>');
-      var bar3 = el('<div class="bar" style="min-height:42px;background:#f2c0d8"></div>');
-      var body3 = el('<div class="body"></div>');
-      var impTotal = imp.reduce(function (s, t) { return s + (t.amount || 0); }, 0);
-      body3.appendChild(el('<div class="seclbl" style="margin:0 0 6px">重要な支出（' + (selMonth + 1) + '月 / ' + imp.length + '件 ' + yen(impTotal) + '）</div>'));
-      imp.forEach(function (t) {
-        var row = el('<div class="bdrow" style="align-items:flex-start"></div>');
-        var left = el('<div style="min-width:0;flex:1"></div>');
-        var p = t.date.split("-");
-        var head = (+p[1]) + "/" + (+p[2]) + (t.category ? "　" + esc(t.category) : "");
-        left.appendChild(el('<div class="bdname" style="white-space:normal">★ ' + head + '</div>'));
-        if (t.memo) left.appendChild(el('<div class="rmemo" style="margin-top:1px">' + esc(t.memo) + '</div>'));
-        row.appendChild(left);
-        row.appendChild(el('<span class="bdamt">' + yen(t.amount) + '</span>'));
-        body3.appendChild(row);
-      });
-      pad3.appendChild(bar3); pad3.appendChild(body3); card3.appendChild(pad3);
-      statsEl.appendChild(card3);
-    }
-  }
-
-  /* ---------- 設定 ---------- */
-  var acctFormOpen = null; // "new" | account id | null
-
-  function exportData() {
-    var json = JSON.stringify({ app: "kakeibo", version: 2, exportedAt: new Date().toISOString(), settings: { startDay: state.startDay, budget: state.budget }, accounts: state.accounts, txs: state.txs }, null, 2);
-    var fn = "kakeibo-backup-" + todayStr() + ".json";
-    try {
-      if (navigator.canShare) {
-        var f = new File([json], fn, { type: "application/json" });
-        if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f] }).catch(function () {}); return; }
-      }
-    } catch (e) {}
-    var a = document.createElement("a");
-    a.href = "data:application/json;charset=utf-8," + encodeURIComponent(json);
-    a.download = fn;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  }
-
-  function importData(parsed, done) {
-    if (!parsed || parsed.version !== 2 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.txs)) {
-      alert("対応していないファイルです（この版のバックアップのみ復元できます）");
-      return;
-    }
-    var accs = parsed.accounts.filter(function (a) { return a && a.id && a.name && accTypeOf(a.type); });
-    var txs = parsed.txs.filter(function (t) { return t && t.id && txTypeOf(t.type) && t.date; });
-    Promise.all([dbClear(ACC), dbClear(TX)]).then(function () {
-      return Promise.all(accs.map(function (a) { return dbPut(ACC, a); }).concat(txs.map(function (t) { return dbPut(TX, t); })));
-    }).then(function () {
-      state.accounts = accs; state.txs = txs;
-      ensureOrder(); sortAccounts();
-      var st = parsed.settings || {};
-      if (typeof st.startDay === "number" && st.startDay >= 1 && st.startDay <= 28) { state.startDay = st.startDay; dbSetMeta("startDay", st.startDay); }
-      if (typeof st.budget === "number" && st.budget >= 0) { state.budget = st.budget; dbSetMeta("budget", st.budget); }
-      state.cursor = periodStart(new Date(), state.startDay);
-      done(accs.length, txs.length);
-    });
-  }
-
-  function accountForm(acc) {
-    var isNew = !acc;
-    var bal = balances();
-    var card = el('<div class="card"></div>');
-    var pad = el('<div class="formpad"></div>');
-    pad.appendChild(el('<div class="seclbl" style="margin:0 0 10px">' + (isNew ? "口座を追加" : "口座を編集") + '</div>'));
-
-    var typeSel = el('<select class="fsel"></select>');
-    ACCTYPES.forEach(function (t) {
-      var o = el('<option value="' + t.key + '">' + t.label + '</option>');
-      if (acc && acc.type === t.key) o.setAttribute("selected", "");
-      typeSel.appendChild(o);
-    });
-    if (!isNew) typeSel.setAttribute("disabled", "");
-    var tf = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">種類</div></div>');
-    tf.appendChild(typeSel); pad.appendChild(tf);
-
-    var nameInp = el('<input class="finp" type="text" placeholder="例：〇〇銀行、自分の財布、PayPay" />');
-    if (acc) nameInp.value = acc.name;
-    var nf = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">名前</div></div>');
-    nf.appendChild(nameInp); pad.appendChild(nf);
-
-    var balInp = el('<input class="finp amt" type="number" inputmode="numeric" placeholder="0" />');
-    if (acc) balInp.value = bal[acc.id] || 0;
-    var balLbl = el('<div class="flabel">現在の残高</div>');
-    var bf = el('<div class="ffield" style="margin-bottom:12px"></div>');
-    bf.appendChild(balLbl);
-    bf.appendChild(balInp); pad.appendChild(bf);
-
-    var wl = el('<label class="fcheck" style="margin-bottom:12px"><input type="checkbox" />生活費に含める（残り予算の対象）</label>');
-    var walletChk = wl.querySelector("input");
-    if (acc && acc.wallet) walletChk.checked = true;
-    pad.appendChild(wl);
-
-    var hl = el('<label class="fcheck" style="margin-bottom:12px"><input type="checkbox" />ホームに表示しない（生活費の合計からも外れます）</label>');
-    var hiddenChk = hl.querySelector("input");
-    if (acc && acc.hidden) hiddenChk.checked = true;
-    pad.appendChild(hl);
-
-    // カード用の設定
-    var cardOpts = el('<div></div>');
-    var pdSel = el('<select class="fsel"></select>');
-    pdSel.appendChild(el('<option value="">未設定</option>'));
-    for (var d = 1; d <= 28; d++) { var o2 = el('<option value="' + d + '">' + d + '日</option>'); if (acc && acc.payDay === d) o2.setAttribute("selected", ""); pdSel.appendChild(o2); }
-    var pf = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">引き落とし日（任意）</div></div>');
-    pf.appendChild(pdSel); cardOpts.appendChild(pf);
-    var srcSel = accSelect(accsOfType("bank"), acc ? acc.payFrom : "", "未設定");
-    var sf = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">引き落とし口座（任意）</div></div>');
-    sf.appendChild(srcSel); cardOpts.appendChild(sf);
-    pad.appendChild(cardOpts);
-
-    function syncType() {
-      var t = typeSel.value;
-      cardOpts.style.display = t === "card" ? "" : "none";
-      wl.style.display = (t === "cash" || t === "emoney") ? "" : "none";
-      balLbl.textContent = t === "card" ? "現在の未払い額" : (t === "loan" ? "現在の貸し借り（貸し＝プラス／借り＝マイナス）" : "現在の残高");
-      nameInp.placeholder = t === "loan" ? "相手の名前（例：母、友人A）" : "例：〇〇銀行、自分の財布、PayPay";
-    }
-    typeSel.addEventListener("change", syncType);
-    syncType();
-
-    if (!isNew && state.accounts.length > 1) {
-      sortAccounts();
-      var pos = state.accounts.findIndex(function (x) { return x.id === acc.id; });
-      var of = el('<div class="ffield" style="margin-bottom:12px"><div class="flabel">並び順</div></div>');
-      var mrow = el('<div style="display:flex;gap:8px"></div>');
-      var up = el('<button class="fbtn cancel" style="flex:1">上へ</button>');
-      var down = el('<button class="fbtn cancel" style="flex:1">下へ</button>');
-      if (pos <= 0) up.setAttribute("disabled", "");
-      if (pos >= state.accounts.length - 1) down.setAttribute("disabled", "");
-      up.onclick = function () { moveAccount(acc.id, -1); };
-      down.onclick = function () { moveAccount(acc.id, 1); };
-      mrow.appendChild(up); mrow.appendChild(down);
-      of.appendChild(mrow);
-      pad.appendChild(of);
-    }
-
-    var btns = el('<div class="fbtns"></div>');
-    if (!isNew) {
-      var used = state.txs.some(function (t) { return t.fromId === acc.id || t.toId === acc.id || (t.payFrom === acc.id); });
-      var db = el('<button class="fbtn del">削除</button>');
-      db.onclick = function () {
-        if (state.txs.some(function (t) { return t.fromId === acc.id || t.toId === acc.id; })) {
-          alert("この口座を使った記録があるため削除できません。先に該当の記録を削除してください。");
-          return;
-        }
-        dbDel(ACC, acc.id).then(function () {
-          state.accounts = state.accounts.filter(function (a) { return a.id !== acc.id; });
-          acctFormOpen = null; renderSettings();
-        });
-      };
-      btns.appendChild(db);
-    }
-    var cb = el('<button class="fbtn cancel">キャンセル</button>');
-    cb.onclick = function () { acctFormOpen = null; renderSettings(); };
-    btns.appendChild(cb);
-    var sb = el('<button class="fbtn save">保存</button>');
-    sb.onclick = function () {
-      var name = nameInp.value.trim();
-      if (!name) { nameInp.focus(); return; }
-      var t = typeSel.value;
-      var entered = parseAmount(balInp.value);
-      if (isNew) {
-        var a = { id: uid(), name: name, type: t, initBalance: entered, wallet: (t === "cash" || t === "emoney") ? walletChk.checked : false, hidden: hiddenChk.checked, order: state.accounts.length, createdAt: Date.now() };
-        if (t === "card") { a.payDay = pdSel.value ? parseInt(pdSel.value, 10) : null; a.payFrom = srcSel.value || null; }
-        state.accounts.push(a); dbPut(ACC, a);
-      } else {
-        var cur = bal[acc.id] || 0;
-        acc.name = name;
-        acc.initBalance = (acc.initBalance || 0) + (entered - cur); // 入力残高に合わせて補正
-        acc.wallet = (acc.type === "cash" || acc.type === "emoney") ? walletChk.checked : false;
-        acc.hidden = hiddenChk.checked;
-        if (acc.type === "card") { acc.payDay = pdSel.value ? parseInt(pdSel.value, 10) : null; acc.payFrom = srcSel.value || null; }
-        dbPut(ACC, acc);
-      }
-      acctFormOpen = null; renderSettings();
-    };
-    btns.appendChild(sb);
-    pad.appendChild(btns);
-    card.appendChild(pad);
-    return card;
-  }
-
-  function renderSettings(msg) {
-    settingsEl.innerHTML = "";
-    var bal = balances();
-
-    // 口座
-    settingsEl.appendChild(el('<p class="seclbl">口座</p>'));
-    if (state.accounts.length) {
-      var lcard = el('<div class="card"></div>');
-      var lpad = el('<div style="padding:10px 16px"></div>');
-      sortAccounts();
-      state.accounts.forEach(function (a) {
-        var editing = (acctFormOpen === a.id);
-        var row = el('<div class="accrow"></div>');
-        if (editing) {
-          row.style.background = "rgba(184,221,160,0.28)";
-          row.style.borderRadius = "8px";
-          row.style.padding = "5px 8px";
-          row.style.margin = "0 -8px";
-        }
-        row.appendChild(el('<span class="rtag2">' + accTypeOf(a.type).label + '</span>'));
-        row.appendChild(el('<span class="accname">' + esc(a.name) + '</span>'));
-        if (a.wallet && a.type !== "card") row.appendChild(el('<span class="wtag">生活費</span>'));
-        if (a.hidden) row.appendChild(el('<span class="rtag2" style="background:rgba(0,0,0,0.08)">非表示</span>'));
-        row.appendChild(el('<span class="accbal" style="font-size:12px">' + yen(bal[a.id] || 0) + '</span>'));
-        if (editing) {
-          row.appendChild(el('<span class="rtag2" style="margin-left:8px;background:rgba(184,221,160,0.5)">編集中</span>'));
-        } else {
-          var eb = el('<button class="editbtn" style="margin-left:8px">編集</button>');
-          eb.onclick = function () { acctFormOpen = a.id; renderSettings(); };
-          row.appendChild(eb);
-        }
-        lpad.appendChild(row);
-      });
-      lcard.appendChild(lpad);
-      settingsEl.appendChild(lcard);
-    }
-    if (acctFormOpen && acctFormOpen !== "new") {
-      var acc = accById(acctFormOpen);
-      if (acc) settingsEl.appendChild(accountForm(acc));
-    }
-    if (acctFormOpen === "new") {
-      settingsEl.appendChild(accountForm(null));
-    } else {
-      var ab = el('<button class="addbtn">＋ 口座を追加</button>');
-      ab.onclick = function () { acctFormOpen = "new"; renderSettings(); };
-      settingsEl.appendChild(ab);
-    }
-
-    // 生活費の予算
-    settingsEl.appendChild(el('<p class="seclbl">生活費の予算</p>'));
-    var bcard2 = el('<div class="card"></div>');
-    var bpad2 = el('<div style="padding:14px 16px"></div>');
-    var brow2 = el('<div style="display:flex;align-items:center;gap:8px"></div>');
-    brow2.appendChild(el('<span style="font-size:13px;color:rgba(0,0,0,0.55)">1か月</span>'));
-    var bInp = el('<input class="finp amt" type="number" inputmode="numeric" placeholder="0" style="width:120px;flex:none" />');
-    if (state.budget > 0) bInp.value = state.budget;
-    brow2.appendChild(bInp);
-    brow2.appendChild(el('<span style="font-size:13px;color:rgba(0,0,0,0.55)">円</span>'));
-    var bsave = el('<button class="editbtn" style="margin-left:auto">保存</button>');
-    bsave.onclick = function () {
-      var v = Math.max(0, parseAmount(bInp.value));
-      state.budget = v; dbSetMeta("budget", v);
-      renderSettings({ where: "budget", text: v > 0 ? "予算を保存しました" : "予算をオフにしました" });
-    };
-    brow2.appendChild(bsave);
-    bpad2.appendChild(brow2);
-    bpad2.appendChild(el('<p class="note" style="padding:8px 0 0">記録した「変動費（固定費チェックなしの支出）」を、月の区切りごとにこの予算から差し引いてホームのバーに表示します。固定費や記録していない生活費は差し引きません。0にすると予算バーをオフにして残高表示に戻します。</p>'));
-    bcard2.appendChild(bpad2);
-    settingsEl.appendChild(bcard2);
-    if (msg && msg.where === "budget") settingsEl.appendChild(el('<p class="okmsg">' + esc(msg.text) + '</p>'));
-
-    // 月の区切り
-    settingsEl.appendChild(el('<p class="seclbl">月の区切り</p>'));
-    var pcard = el('<div class="card"></div>');
-    var ppad = el('<div style="padding:14px 16px"></div>');
-    var prow = el('<div style="display:flex;align-items:center;gap:8px"></div>');
-    prow.appendChild(el('<span style="font-size:13px;color:rgba(0,0,0,0.55)">毎月</span>'));
-    var sel = el('<select class="daysel"></select>');
-    for (var d2 = 1; d2 <= 28; d2++) { var o3 = el('<option value="' + d2 + '">' + d2 + '</option>'); if (d2 === state.startDay) o3.setAttribute("selected", ""); sel.appendChild(o3); }
-    prow.appendChild(sel);
-    prow.appendChild(el('<span style="font-size:13px;color:rgba(0,0,0,0.55)">日から</span>'));
-    ppad.appendChild(prow);
-    var preview = el('<p class="note" style="padding:8px 0 0"></p>');
-    function updatePreview() {
-      var st = periodStart(new Date(), state.startDay), en = periodEnd(st, state.startDay), last = new Date(en.getTime() - 86400000);
-      preview.textContent = state.startDay === 1
-        ? "暦どおり、1日から月末までを「その月」として集計します。"
-        : "例：今は " + (st.getMonth() + 1) + "/" + st.getDate() + "〜" + (last.getMonth() + 1) + "/" + last.getDate() + " を「" + (st.getMonth() + 1) + "月」として集計します。";
-    }
-    updatePreview();
-    sel.onchange = function () {
-      var v = parseInt(sel.value, 10) || 1;
-      state.startDay = v; dbSetMeta("startDay", v);
-      state.cursor = periodStart(new Date(), v);
-      state.statsCursor = periodStart(new Date(), v);
-      updatePreview();
-    };
-    ppad.appendChild(preview);
-    pcard.appendChild(ppad);
-    settingsEl.appendChild(pcard);
-
-    // バックアップ
-    settingsEl.appendChild(el('<p class="seclbl">バックアップ</p>'));
-    var bcard = el('<div class="card"></div>');
-    var brow = el('<div class="btnrow"></div>');
-    var expBtn = el('<button class="sbtn">ファイルとして保存</button>');
-    expBtn.onclick = exportData;
-    var impLabel = el('<label class="sbtn" style="cursor:pointer">ファイルから復元</label>');
-    var impInput = el('<input type="file" accept=".json,application/json" style="display:none" />');
-    impInput.onchange = function (ev) {
-      var f = ev.target.files[0]; if (!f) return;
-      var r = new FileReader();
-      r.onload = function (e2) {
-        try { var parsed = JSON.parse(e2.target.result); importData(parsed, function (na, nt) { renderSettings({ where: "backup", text: "口座" + na + "件・記録" + nt + "件を復元しました" }); }); }
-        catch (err) { alert("読み込みに失敗しました"); }
-      };
-      r.readAsText(f); ev.target.value = "";
-    };
-    impLabel.appendChild(impInput);
-    brow.appendChild(expBtn); brow.appendChild(impLabel);
-    bcard.appendChild(brow);
-    bcard.appendChild(el('<p class="note">口座・記録・設定はこの端末のブラウザ（IndexedDB）に自動保存されます。機種変更や削除に備えて、ときどきファイルとして保存しておくと安心です。</p>'));
-    settingsEl.appendChild(bcard);
-
-    if (msg && msg.where === "backup") settingsEl.appendChild(el('<p class="okmsg">' + esc(msg.text) + '</p>'));
-
-    // データ管理
-    settingsEl.appendChild(el('<p class="seclbl">データ管理</p>'));
-    var dcard = el('<div class="card"></div>');
-    var dpad = el('<div style="padding:14px 16px"></div>');
-    var confirming = false;
-    function paint() {
-      dpad.innerHTML = "";
-      if (!confirming) {
-        var b = el('<button class="sbtn" style="width:100%">すべてのデータを削除</button>');
-        b.onclick = function () { confirming = true; paint(); };
-        dpad.appendChild(b);
-      } else {
-        dpad.appendChild(el('<p class="confirmtext">すべての口座と記録を削除します。この操作は取り消せません。</p>'));
-        var row = el('<div style="display:flex;gap:8px"></div>');
-        var cancel = el('<button class="sbtn" style="flex:1">キャンセル</button>');
-        var del = el('<button class="sbtn danger" style="flex:1">削除する</button>');
-        cancel.onclick = function () { confirming = false; paint(); };
-        del.onclick = function () {
-          Promise.all([dbClear(ACC), dbClear(TX)]).then(function () {
-            state.accounts = []; state.txs = []; confirming = false; paint(); renderSettings();
-          });
-        };
-        row.appendChild(cancel); row.appendChild(del); dpad.appendChild(row);
-      }
-    }
-    paint();
-    dcard.appendChild(dpad);
-    settingsEl.appendChild(dcard);
-
-    // アプリの更新について＋バージョン
-    settingsEl.appendChild(el('<p class="seclbl">アプリの更新について</p>'));
-    var ucard = el('<div class="card"></div>');
-    ucard.appendChild(el('<p class="note" style="padding:12px 16px">新しいバージョンが公開されると、アプリを開いたときに自動で更新されます。反映されないときは、アプリを一度完全に閉じて開き直してください。データはそのまま引き継がれます。</p>'));
-    settingsEl.appendChild(ucard);
-    settingsEl.appendChild(el('<p style="text-align:center;margin:18px 0 8px;font-size:11px;color:rgba(0,0,0,0.25)">バージョン ' + APP_VERSION + '</p>'));
-  }
-
-  /* ---------- init ---------- */
-  buildShell();
-  renderView();
-  Promise.all([dbAll(ACC), dbAll(TX), dbGetMeta("startDay"), dbGetMeta("budget")]).then(function (res) {
-    state.accounts = res[0];
-    state.txs = res[1];
-    if (typeof res[2] === "number" && res[2] >= 1 && res[2] <= 28) state.startDay = res[2];
-    if (typeof res[3] === "number" && res[3] >= 0) state.budget = res[3];
-    ensureOrder(); sortAccounts();
-    state.cursor = periodStart(new Date(), state.startDay);
-    renderView();
-  }).catch(function (err) {
-    homeEl.innerHTML = '<div class="empty">保存領域を開けませんでした<br>' + esc(String(err)) + '</div>';
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── 定数 ──────────────────────────────────────────────────
+const APP_VERSION = "4.8";
+const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
+const SLOT_DEFS = [
+  { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
+  { id:"noon",     label:"昼",    color:"#cce9b8", dim:"rgba(204,233,184,0.35)" },
+  { id:"evening",  label:"夜",    color:"#c2d8f0", dim:"rgba(194,216,240,0.35)" },
+  { id:"bedtime",  label:"寝る前", color:"#ccc8f2", dim:"rgba(204,200,242,0.35)" },
+];
+const WC = "#f2c0d8", WDM = "rgba(242,192,216,0.35)";
+const WDL = ["日","月","火","水","木","金","土"];
+const CAT = {
+  bath:  { color:"#b8d8f0", dim:"rgba(184,216,240,0.4)" },
+  meal:  { color:"#b8dda0", dim:"rgba(184,221,160,0.4)" },
+  teeth: { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
+  memo:  { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
+  mood:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
+};
+const MOOD_LABELS = ["最悪","悪い","ふつう","良い","最高"];
+const MOOD_COLORS = ["#f5c2c2","#fad9c0","#f5edc0","#d4ebc2","#b3d9ed"];
+const RATING_FIELDS = [
+  { key:"condition", label:"体調", color:"#cfe0f2" },
+  { key:"sleep",     label:"睡眠", color:"#ddd2f0" },
+];
+const RATING_LABELS = ["最悪","悪い","ふつう","良い","最高"];
+const MEAL_COLORS = {
+  "朝食": { color:"#fbd5ac", dim:"rgba(251,213,172,0.4)" },
+  "昼食": { color:"#cce9b8", dim:"rgba(204,233,184,0.4)" },
+  "夕食": { color:"#c2d8f0", dim:"rgba(194,216,240,0.4)" },
+  "間食": { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
+  "その他": { color:"#cccccc", dim:"rgba(204,204,204,0.4)" }, // 旧記録用フォールバック（ボタンには出ない）
+};
+const MEAL_CATS = ["朝食","昼食","夕食","間食"];
+const FULLNESS_LABELS = ["少なめ","普通","多め","満腹","食べすぎ"];
+
+const SECONDARY_TABS = ["timeline","stats","settings"];
+const DEFAULT_TAB_ORDER = ["meal","med","bath","teeth","mood","memo"];
+const TAB_LABELS = {
+  bath:"入浴", med:"服薬", meal:"食事", teeth:"歯磨き", mood:"気分", memo:"行動",
+  timeline:"履歴", stats:"統計", settings:"設定"
+};
+const DB_NAME = "daily-log";
+const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
+
+// ── IndexedDB ──────────────────────────────────────────────
+let _db = null;
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((res,rej) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore("data");
+    req.onsuccess = e => { _db = e.target.result; res(_db); };
+    req.onerror = () => rej(req.error);
   });
-})();
-</script>
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", function () {
-    navigator.serviceWorker.register("./sw.js").then(function (reg) {
-      reg.update().catch(function () {});
-      reg.addEventListener("updatefound", function () {
-        var nw = reg.installing;
-        if (!nw) return;
-        nw.addEventListener("statechange", function () {
-          if (nw.state === "installed" && navigator.serviceWorker.controller) {
-            nw.postMessage("skipWaiting");
-          }
-        });
+}
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((res,rej) => {
+    const req = db.transaction("data","readonly").objectStore("data").get(key);
+    req.onsuccess = () => res(req.result ?? null);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function dbSet(key, val) {
+  const db = await openDB();
+  return new Promise((res,rej) => {
+    const req = db.transaction("data","readwrite").objectStore("data").put(val, key);
+    req.onsuccess = () => res(); req.onerror = () => rej(req.error);
+  });
+}
+async function migrateMed() {
+  if (await dbGet("_migrated")) return;
+  await new Promise(res => {
+    try {
+      const req = indexedDB.open("med-tracker", 1);
+      req.onerror = () => res();
+      req.onsuccess = async e => {
+        try {
+          const db2 = e.target.result;
+          const tx = db2.transaction("data","readonly").objectStore("data");
+          const g = k => new Promise(r => { const q=tx.get(k); q.onsuccess=()=>r(q.result||null); q.onerror=()=>r(null); });
+          const [rec,conf] = await Promise.all([g("records"),g("config")]);
+          db2.close();
+          if (rec)  await dbSet(K.med, rec);
+          if (conf) await dbSet(K.medC, conf);
+        } catch {}
+        res();
+      };
+    } catch { res(); }
+  });
+  await dbSet("_migrated", true);
+}
+
+// ── ユーティリティ ─────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2,9);
+// textarea を内容に合わせて自動で高さ調整
+// 点列[{x,y}]を滑らかな曲線パス(d属性)に変換（Catmull-Rom→ベジェ）
+function smoothPath(pts){
+  if(!pts.length)return"";
+  if(pts.length===1)return`M ${pts[0].x} ${pts[0].y}`;
+  let d=`M ${pts[0].x} ${pts[0].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1.x+(p2.x-p0.x)/6, c1y=p1.y+(p2.y-p0.y)/6;
+    const c2x=p2.x-(p3.x-p1.x)/6, c2y=p2.y-(p3.y-p1.y)/6;
+    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+function hexA(hex,a){try{const h=hex.replace("#","");const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return `rgba(${r},${g},${b},${a})`;}catch{return hex;}}
+function fitTextarea(el){ if(!el) return; el.style.height="auto"; el.style.height=el.scrollHeight+"px"; }
+function useAutoGrow(deps=[]){
+  const ref=useRef(null);
+  useEffect(()=>{ fitTextarea(ref.current); }, deps); // eslint-disable-line
+  return ref;
+}
+const todayKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function addMonths(mk,n){const[y,m]=mk.split("-").map(Number);const t=y*12+(m-1)+n;return `${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;}
+function addDays(ds,n){const[y,m,d]=ds.split('-');const dt=new Date(+y,+m-1,+d+n);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}
+const dateWd = ds => { const [y,m,d]=ds.split("-"); return new Date(+y,+m-1,+d).getDay(); };
+const isoHM = iso => new Date(iso).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",hour12:false});
+const hmIso = (dk,hm) => new Date(`${dk}T${hm}:00`).toISOString();
+const fmtDate = ds => { const [y,m,d]=ds.split("-"); return new Date(+y,+m-1,+d).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric",weekday:"short"}); };
+const fmtMonth = ds => { const [y,m]=ds.split("-"); return `${y}年${+m}月`; };
+const normMed = m => typeof m==="string" ? {id:uid(),name:m} : m;
+function defaultMedConf() { return {slots:Object.fromEntries(SLOT_DEFS.map(s=>[s.id,{enabled:true,meds:[]}])),weeklyMeds:[],prnMeds:[]}; }
+function defaultTeethConf() { return {items:[{id:"b1",name:"歯ブラシ",color:"#f5e6b0"}]}; }
+function defaultTagConf() { return {tags:[]}; }
+function hexDim(hex,a=0.4){try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;}catch{return `rgba(200,200,200,${a})`;}}
+function dimY(y,m) { return new Date(+y,+m,0).getDate(); }
+function padDate(y,m,d) { return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+
+// ── 共通スタイル ──────────────────────────────────────────
+const card    = {width:"100%",maxWidth:380,background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:14,marginBottom:10,overflow:"hidden"};
+const secLbl  = {fontSize:11,fontWeight:700,letterSpacing:".07em",color:"rgba(0,0,0,0.33)",textTransform:"uppercase",marginBottom:8,marginTop:4};
+const smBtn   = (bg="rgba(0,0,0,0.06)") => ({background:bg,border:"none",borderRadius:8,padding:"4px 9px",fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.45)",cursor:"pointer",fontFamily:"inherit"});
+const icoBtn  = {background:"none",border:"none",cursor:"pointer",padding:"2px 5px",fontSize:12,color:"rgba(0,0,0,0.22)",fontFamily:"inherit"};
+const inp     = {border:"none",borderBottom:"1px solid rgba(0,0,0,0.1)",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none",padding:"6px 0",display:"block",width:"100%"};
+const addBtn  = {width:"100%",maxWidth:380,background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:14,padding:"11px 0",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.4)",cursor:"pointer",fontFamily:"inherit",marginBottom:10};
+const tabBtnS = a => ({flexShrink:0,minWidth:52,padding:"7px 6px",background:a?"rgba(255,255,255,0.92)":"transparent",border:a?"1px solid rgba(0,0,0,0.07)":"1px solid transparent",borderRadius:9,fontSize:11,fontWeight:a?600:400,color:a?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.35)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"});
+const secTabS = a => ({padding:"5px 10px",background:a?"rgba(0,0,0,0.09)":"rgba(0,0,0,0.04)",border:"none",borderRadius:8,fontSize:11,fontWeight:a?600:400,color:a?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"});
+const pc = p => p>=90?"#b8dda0":p>=70?"#f7c08a":"#f0c0b8";
+
+// ── 共通コンポーネント ──────────────────────────────────────
+function DateNav({curDate,realToday,onPrev,onNext,onGoTo,onToday}) {
+  const isToday=curDate===realToday;
+  const[y,m,d]=curDate.split("-");
+  const lbl=new Date(+y,+m-1,+d).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric",weekday:"short"});
+  // 3つのボタン共通の高さ（元の padding:6px 0 相当 ＝ 約34px）
+  const H=34;
+  const NB=({onClick,ch,disabled})=>(
+    <button onClick={onClick} disabled={disabled}
+      style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:H,height:H,fontSize:15,lineHeight:1,cursor:disabled?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:disabled?0.3:1,padding:0}}>
+      {ch}
+    </button>
+  );
+  return(
+    <div style={{display:"flex",alignItems:"center",marginBottom:12,gap:4}}>
+      <NB onClick={onPrev} ch="‹" disabled={false}/>
+      <div style={{flex:1,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,height:H,boxSizing:"border-box"}}>
+        <span style={{position:"relative",display:"inline-flex",alignItems:"center",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)",lineHeight:1}}>
+          {isToday?"今日":lbl}
+          {/* 今日へ：日付の右隣に絶対配置（センタリングに影響しない） */}
+          {!isToday&&onToday&&(
+            <button onClick={onToday}
+              style={{position:"absolute",left:"100%",marginLeft:8,top:"50%",transform:"translateY(-50%)",zIndex:2,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                background:"rgba(0,0,0,0.04)",border:"none",borderRadius:7,padding:"4px 8px",
+                fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.4)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",lineHeight:1}}>
+              今日へ
+            </button>
+          )}
+        </span>
+        {/* 透明の日付入力を重ねてタップでピッカーを開く */}
+        {onGoTo&&<input type="date" value={curDate} max={realToday}
+          onChange={e=>onGoTo(e.target.value)}
+          style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",border:"none",padding:0,margin:0,zIndex:1}}/>}
+      </div>
+      <NB onClick={onNext} ch="›" disabled={isToday}/>
+    </div>
+  );
+}
+function MonthNav({month,maxMonth,minMonth,onPrev,onNext,onPick}) {
+  const atMax=month>=maxMonth;
+  const[cy,cm]=month.split("-");
+  const selYear=+cy, selMonth=+cm; // selMonthは1-12
+  const maxY=+maxMonth.slice(0,4);
+  const minY=minMonth?+minMonth.slice(0,4):maxY-5;
+  const years=[];for(let y=maxY;y>=minY;y--)years.push(y);
+  const go=(y,mo)=>{let mk=`${y}-${String(mo).padStart(2,"0")}`;if(mk>maxMonth)mk=maxMonth;if(minMonth&&mk<minMonth)mk=minMonth;onPick(mk);};
+  const selStyle={border:"none",background:"transparent",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.6)",outline:"none",WebkitAppearance:"none",appearance:"none",textAlign:"center",textAlignLast:"center",padding:"0 2px",fontFamily:"inherit",cursor:"pointer"};
+  const unitStyle={fontSize:12,color:"rgba(0,0,0,0.5)"};
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:12}}>
+      <button onClick={onPrev} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)"}}>‹</button>
+      <div style={{flex:1,textAlign:"center",background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,padding:"6px 0",display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+        <select value={selYear} onChange={e=>go(+e.target.value,selMonth)} style={selStyle}>
+          {years.map(y=><option key={y} value={y}>{y}</option>)}
+        </select>
+        <span style={unitStyle}>年</span>
+        <select value={selMonth} onChange={e=>go(selYear,+e.target.value)} style={selStyle}>
+          {Array.from({length:12},(_,i)=>i+1).map(mo=><option key={mo} value={mo}>{mo}</option>)}
+        </select>
+        <span style={unitStyle}>月</span>
+      </div>
+      <button onClick={onNext} disabled={atMax} style={{background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.07)",borderRadius:9,width:30,height:30,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"rgba(0,0,0,0.35)",opacity:atMax?0.3:1}}>›</button>
+    </div>
+  );
+}
+function TimeCell({iso,color,dim,onUpdate,onRemove,showRemove=true}) {
+  const[ed,setEd]=useState(false);const ref=useRef(null);
+  useEffect(()=>{if(ed&&ref.current)ref.current.focus();},[ed]);
+  const hm=isoHM(iso);
+  if(ed) return(
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <input ref={ref} type="time" defaultValue={hm}
+        onChange={e=>{if(e.target.value)onUpdate(e.target.value);}}
+        onBlur={()=>setEd(false)}
+        style={{fontSize:12,fontWeight:600,background:dim,color:"rgba(0,0,0,0.65)",border:"none",borderRadius:20,padding:"4px 10px",outline:"none",width:92}}/>
+      {showRemove&&<button onMouseDown={e=>{e.preventDefault();onRemove();}} style={icoBtn}>✕</button>}
+    </div>
+  );
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <button onClick={()=>setEd(true)} style={{fontSize:12,fontWeight:600,background:dim,color:"rgba(0,0,0,0.55)",padding:"4px 10px",borderRadius:20,border:"none",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{hm}</button>
+      {showRemove&&<button onClick={onRemove} style={icoBtn}>✕</button>}
+    </div>
+  );
+}
+function useDateNav(realToday) {
+  const[cur,setCur]=useState(realToday);
+  const prev=useCallback(()=>setCur(d=>addDays(d,-1)),[]);
+  const next=useCallback(()=>setCur(d=>{const n=addDays(d,1);return n<=realToday?n:d;}),[realToday]);
+  const goTo=useCallback(ds=>{if(ds&&ds<=realToday)setCur(ds);},[realToday]);
+  const goToday=useCallback(()=>setCur(realToday),[realToday]);
+  return{curDate:cur,prevDay:prev,nextDay:next,goTo,goToday};
+}
+
+// ── 入浴タブ ──────────────────────────────────────────────
+function BathTab({records,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const entries=records[curDate]||[];
+  const add=()=>onUpdate({...records,[curDate]:[...entries,{id:uid(),time:new Date().toISOString(),memo:""}]});
+  const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
+  const updM=(id,memo)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,memo}:e)});
+  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {entries.map(e=>(
+        <div key={e.id} style={card}>
+          <div style={{padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+              <div style={{width:4,height:20,borderRadius:2,background:CAT.bath.color,flexShrink:0}}/>
+              <TimeCell iso={e.time} color={CAT.bath.color} dim={CAT.bath.dim} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
+            </div>
+            <BathMemo key={e.id+curDate} memo={e.memo} onChange={m=>updM(e.id,m)}/>
+          </div>
+        </div>
+      ))}
+      <button onClick={add} style={addBtn}>＋ 入浴を記録</button>
+    </div>
+  );
+}
+function BathMemo({memo,onChange}) {
+  const ref=useAutoGrow([memo]);
+  return(
+    <textarea ref={ref} defaultValue={memo||""} rows={1} placeholder="メモ（任意）"
+      onInput={e=>fitTextarea(e.target)} onBlur={e=>onChange(e.target.value)}
+      style={{width:"100%",border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.55)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",padding:"2px 0 0 16px",overflow:"hidden"}}/>
+  );
+}
+
+// ── 服薬タブ ──────────────────────────────────────────────
+function MedTab({records,config,onTake,onUpdate,onRemove,onPrnAdd,onPrnTime,onPrnRemove,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const dr=records[curDate]||{},wd=dateWd(curDate);
+  const aSlots=SLOT_DEFS.filter(s=>config.slots[s.id]?.enabled);
+  const todayW=config.weeklyMeds.filter(wm=>wm.weekdays.includes(wd));
+  const isToday=curDate===realToday;
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {aSlots.map(s=>{
+        const ts=dr[s.id];
+        const curMeds=(config.slots[s.id]?.meds||[]).map(m=>m.name||m);
+        // 表示する薬名：打刻済みなら焼き込み名を優先、なければ現在の設定
+        const baked=(dr.__names&&dr.__names[s.id])||null;
+        const meds=ts&&baked?baked:curMeds;
+        // 非表示条件：今その時間帯に薬が無く、かつその日に打刻もない
+        if(curMeds.length===0&&!ts)return null;
+        return(
+          <div key={s.id} style={card}>
+            <div style={{display:"flex",alignItems:"flex-start",padding:"12px 16px",gap:12}}>
+              <div style={{width:4,borderRadius:2,background:ts?s.color:"rgba(0,0,0,0.08)",flexShrink:0,alignSelf:"stretch"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{s.label}</p>
+                {meds.length>0&&<p style={{fontSize:11,color:"rgba(0,0,0,0.35)",marginTop:2,lineHeight:1.5}}>{meds.join("　")}</p>}
+              </div>
+              {ts
+                ?<TimeCell iso={ts} color={s.color} dim={s.dim} onUpdate={hm=>onUpdate(curDate,s.id,hm)} onRemove={()=>onRemove(curDate,s.id)}/>
+                :<button onClick={()=>onTake(curDate,s.id)} style={{background:s.color,border:"none",borderRadius:20,padding:"6px 16px",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.5)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>飲んだ</button>}
+            </div>
+          </div>
+        );
+      })}
+      {todayW.length>0&&<>
+        <p style={{...secLbl,marginTop:4}}>曜日限定</p>
+        {todayW.map(wm=>{
+          const key=`w:${wm.id}`,ts=dr[key];
+          return(
+            <div key={wm.id} style={card}>
+              <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:12}}>
+                <div style={{width:4,borderRadius:2,background:ts?WC:"rgba(0,0,0,0.08)",flexShrink:0,alignSelf:"stretch"}}/>
+                <div style={{flex:1}}>
+                  <p style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{wm.name}</p>
+                  <p style={{fontSize:11,color:"rgba(0,0,0,0.35)",marginTop:2}}>{wm.weekdays.map(d=>WDL[d]).join("・")}曜日</p>
+                </div>
+                {ts
+                  ?<TimeCell iso={ts} color={WC} dim={WDM} onUpdate={hm=>onUpdate(curDate,key,hm)} onRemove={()=>onRemove(curDate,key)}/>
+                  :<button onClick={()=>onTake(curDate,key)} style={{background:WC,border:"none",borderRadius:20,padding:"6px 16px",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.5)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>飲んだ</button>}
+              </div>
+            </div>
+          );
+        })}
+      </>}
+      <PrnField records={records} config={config} onPrnAdd={onPrnAdd} onPrnTime={onPrnTime} onPrnRemove={onPrnRemove} onNote={(dk,v)=>onUpdate(dk,"prn",v)} dateKey={curDate}/>
+      <div style={{...card,marginTop:2}}>
+        <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:"rgba(0,0,0,0.33)",flex:1}}>{isToday?"本日":"当日"}</span>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {aSlots.filter(s=>((config.slots[s.id]?.meds||[]).length>0)||dr[s.id]).map(s=><div key={s.id} style={{borderRadius:8,padding:"4px 7px",background:dr[s.id]?s.color:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:dr[s.id]?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>{s.label}</div>)}
+            {todayW.length>0&&(()=>{const anyTaken=todayW.some(wm=>dr[`w:${wm.id}`]);return(
+              <div style={{borderRadius:8,padding:"4px 7px",background:anyTaken?WC:"rgba(0,0,0,0.06)",fontSize:10,fontWeight:600,color:anyTaken?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.2)"}}>曜日限定</div>
+            );})()}
+            {(dr.prn||(Array.isArray(dr.prnList)&&dr.prnList.length))&&<div style={{borderRadius:8,padding:"4px 7px",background:"#f5e6b0",fontSize:10,fontWeight:600,color:"rgba(0,0,0,0.5)"}}>頓服</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function PrnField({records,config,onPrnAdd,onPrnTime,onPrnRemove,onNote,dateKey}) {
+  const dk=dateKey||todayKey();
+  const noteRef=useRef(null);
+  const dr=records[dk]||{};
+  const list=Array.isArray(dr.prnList)?dr.prnList:[];
+  const presets=config?.prnMeds||[];
+  useEffect(()=>{if(noteRef.current){noteRef.current.value=dr.prn||"";fitTextarea(noteRef.current);}},[dk]);
+  const sorted=[...list].sort((a,b)=>a.time.localeCompare(b.time));
+  return(
+    <div style={{...card,marginTop:6}}>
+      <div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <div style={{width:4,height:18,borderRadius:2,background:(list.length||(dr.prn&&dr.prn.trim()))?"#f5e6b0":"rgba(0,0,0,0.08)",flexShrink:0}}/>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.5)",letterSpacing:".05em"}}>頓服</p>
+        </div>
+        {/* プリセット選択 */}
+        {presets.length>0&&(
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:list.length?10:8}}>
+            {presets.map(p=>(
+              <button key={p.id} onClick={()=>onPrnAdd(dk,p)}
+                style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+                  background:p.color||"#d0d0d0",color:"rgba(0,0,0,0.6)"}}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* 記録済みリスト */}
+        {sorted.map(e=>(
+          <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",paddingLeft:4}}>
+            <div style={{width:3,height:16,borderRadius:2,background:e.color||"#d0d0d0",flexShrink:0}}/>
+            <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{e.name}</span>
+            <TimeCell iso={e.time} color={e.color||"#d0d0d0"} dim={hexA(e.color||"#d0d0d0",0.4)}
+              onUpdate={hm=>onPrnTime(dk,e.id,hm)} onRemove={()=>onPrnRemove(dk,e.id)}/>
+          </div>
+        ))}
+        {/* 自由記述 */}
+        <div style={{marginTop:list.length?8:0,paddingTop:list.length?8:0,borderTop:list.length?"1px solid rgba(0,0,0,0.05)":"none"}}>
+          <textarea ref={noteRef} defaultValue={dr.prn||""} rows={1}
+            onInput={e=>fitTextarea(e.target)} onBlur={e=>onNote(dk,e.target.value)} placeholder="メモ（自由記入）"
+            style={{width:"100%",border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.62)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",padding:0,overflow:"hidden"}}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 食事タブ ──────────────────────────────────────────────
+function MealTab({records,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const[adding,setAdding]=useState(false);
+  const[editId,setEditId]=useState(null);
+  const entries=records[curDate]||[];
+  const add=e=>{onUpdate({...records,[curDate]:[...entries,e]});setAdding(false);};
+  const saveEdit=v=>{onUpdate({...records,[curDate]:entries.map(e=>e.id===editId?{...e,...v}:e)});setEditId(null);};
+  const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
+  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);setEditId(null);};
+  const sorted=[...entries].sort((a,b)=>a.time.localeCompare(b.time));
+  const totalCal=entries.reduce((s,e)=>s+(e.calories||0),0);
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {totalCal>0&&<div style={{...card,marginBottom:10}}><div style={{padding:"8px 16px",display:"flex",alignItems:"center"}}><span style={{fontSize:11,color:"rgba(0,0,0,0.33)",flex:1}}>本日合計</span><span style={{fontSize:14,fontWeight:700,color:"rgba(0,0,0,0.6)"}}>{totalCal.toLocaleString()} kcal</span></div></div>}
+      {sorted.map(e=>{
+        const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];
+        if(editId===e.id) return(
+          <MealForm key={e.id} initial={e} submitLabel="保存"
+            onSave={saveEdit} onCancel={()=>setEditId(null)} onDelete={()=>rem(e.id)}/>
+        );
+        return(
+          <div key={e.id} style={card}>
+            <div style={{padding:"12px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+                <div style={{width:4,height:20,borderRadius:2,background:c.color,flexShrink:0}}/>
+                <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)",flex:1}}>{e.category}</span>
+                <TimeCell iso={e.time} color={c.color} dim={c.dim} showRemove={false} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
+                <button onClick={()=>setEditId(e.id)} style={{...smBtn(),fontSize:11,padding:"3px 8px",flexShrink:0}}>編集</button>
+              </div>
+              <div style={{display:"flex",gap:6,paddingLeft:16,flexWrap:"wrap",alignItems:"center"}}>
+                {e.calories!=null&&<span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.5)",background:c.dim,borderRadius:8,padding:"3px 8px"}}>{e.calories} kcal</span>}
+                {e.fullness!=null&&<span style={{fontSize:11,color:"rgba(0,0,0,0.4)",background:"rgba(0,0,0,0.04)",borderRadius:8,padding:"3px 8px"}}>{FULLNESS_LABELS[e.fullness-1]}</span>}
+                {e.memo&&<span style={{fontSize:11,color:"rgba(0,0,0,0.4)",lineHeight:1.5}}>{e.memo}</span>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {adding?<MealForm submitLabel="記録" onSave={add} onCancel={()=>setAdding(false)}/>:<button onClick={()=>setAdding(true)} style={addBtn}>＋ 食事を記録</button>}
+    </div>
+  );
+}
+function MealForm({initial,onSave,onCancel,onDelete,submitLabel="記録"}) {
+  const[cat,setCat]=useState(initial?.category||"朝食");
+  const[fullness,setFullness]=useState(initial?.fullness??null);
+  const calRef=useRef(null),memoRef=useRef(null);
+  useEffect(()=>{fitTextarea(memoRef.current);},[]);
+  const mc=MEAL_COLORS[cat]||MEAL_COLORS["その他"];
+  const save=()=>{
+    const cal=calRef.current?.value?parseInt(calRef.current.value):null;
+    onSave({category:cat,calories:cal||null,fullness,memo:memoRef.current?.value||"",
+      ...(initial?{}:{id:uid(),time:new Date().toISOString()})});
+  };
+  return(
+    <div style={card}><div style={{padding:"14px 16px"}}>
+      <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
+        {MEAL_CATS.map(c=>{const cc=MEAL_COLORS[c]||MEAL_COLORS["その他"];return(<button key={c} onClick={()=>setCat(c)} style={{padding:"5px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:cat===c?cc.color:"rgba(0,0,0,0.06)",color:cat===c?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>{c}</button>);})}
+      </div>
+      <div style={{marginBottom:12}}>
+        <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:4}}>カロリー（任意）</p>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><input ref={calRef} type="number" min="0" max="9999" placeholder="0" defaultValue={initial?.calories??""} style={{...inp,width:72,flex:"none"}}/><span style={{fontSize:11,color:"rgba(0,0,0,0.35)"}}>kcal</span></div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:6}}>体感の量（任意）</p>
+        <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>setFullness(fullness===n?null:n)} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:fullness===n?mc.color:"rgba(0,0,0,0.06)",color:fullness===n?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>{n}</button>)}</div>
+        {fullness&&<p style={{fontSize:10,color:"rgba(0,0,0,0.35)",marginTop:4,textAlign:"center"}}>{FULLNESS_LABELS[fullness-1]}</p>}
+      </div>
+      <textarea ref={memoRef} rows={1} placeholder="メモ（任意）" defaultValue={initial?.memo||""} onInput={e=>fitTextarea(e.target)} style={{...inp,resize:"none",lineHeight:1.6,marginBottom:12,overflow:"hidden"}}/>
+      <div style={{display:"flex",gap:8}}>
+        {onDelete&&<button onClick={onDelete} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:12,color:"rgba(0,0,0,0.35)",padding:"8px 10px"}}>削除</button>}
+        <button onClick={onCancel} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:12}}>キャンセル</button>
+        <button onClick={save} style={{...smBtn(mc.color),flex:2,padding:"8px 0",fontSize:12,fontWeight:700}}>{submitLabel}</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ── 歯磨きタブ ─────────────────────────────────────────────
+function TeethTab({records,teethConf,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const dayEntries=Array.isArray(records[curDate])?records[curDate]:[];
+  const items=teethConf?.items||[];
+  const addRecord=item=>onUpdate({...records,[curDate]:[...dayEntries,{id:uid(),itemId:item.id,itemName:item.name,time:new Date().toISOString()}]});
+  const remRecord=id=>{const nx={...records},a=dayEntries.filter(e=>e.id!==id);if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
+  const updTime=(id,hm)=>onUpdate({...records,[curDate]:dayEntries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
+  if(!items.length) return(<div style={{width:"100%",maxWidth:380}}><DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/><p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:40}}>設定からアイテムを追加してください</p></div>);
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {items.map(item=>{
+        const ir=dayEntries.filter(e=>e.itemId===item.id);
+        const col=item.color||CAT.teeth.color, dim=hexA(col,0.4);
+        return(
+          <div key={item.id} style={card}><div style={{padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:ir.length?8:0}}>
+              <div style={{width:4,borderRadius:2,background:ir.length?col:"rgba(0,0,0,0.08)",flexShrink:0,height:20}}/>
+              <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)",flex:1}}>{item.name}</span>
+              <button onClick={()=>addRecord(item)} style={{background:col,border:"none",borderRadius:20,padding:"6px 16px",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.5)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>みがいた</button>
+            </div>
+            {ir.map(r=>(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,paddingLeft:16,marginTop:4}}>
+                <TimeCell iso={r.time} color={col} dim={dim} onUpdate={hm=>updTime(r.id,hm)} onRemove={()=>remRecord(r.id)}/>
+              </div>
+            ))}
+          </div></div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── 行動メモタブ ──────────────────────────────────────────
+function MemoTab({records,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const[text,setText]=useState("");
+  const inputRef=useRef(null);
+  const entries=records[curDate]||[];
+  const add=()=>{const t=text.trim();if(!t)return;onUpdate({...records,[curDate]:[...entries,{id:uid(),time:new Date().toISOString(),text:t}]});setText("");if(inputRef.current){inputRef.current.style.height="auto";}};
+  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
+  const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
+  const updTxt=(id,txt)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,text:txt}:e)});
+  const sorted=[...entries].sort((a,b)=>b.time.localeCompare(a.time));
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      <div style={card}><div style={{padding:"12px 16px"}}>
+        <textarea ref={inputRef} value={text} onChange={e=>{setText(e.target.value);fitTextarea(e.target);}}
+          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();add();}}}
+          rows={1} placeholder="行動メモを入力…"
+          style={{width:"100%",border:"none",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.7)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",overflow:"hidden"}}/>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:6}}>
+          <button onClick={add} style={{...smBtn(text.trim()?"rgba(0,0,0,0.09)":"rgba(0,0,0,0.04)"),padding:"6px 14px",fontSize:12,fontWeight:600,color:text.trim()?"rgba(0,0,0,0.55)":"rgba(0,0,0,0.25)"}}>記録</button>
+        </div>
+      </div></div>
+      {sorted.map(e=>(
+        <MemoCard key={e.id+curDate} entry={e} curDate={curDate}
+          onTime={hm=>updT(e.id,hm)} onSaveText={t=>updTxt(e.id,t)} onDelete={()=>rem(e.id)}/>
+      ))}
+    </div>
+  );
+}
+function MemoCard({entry,curDate,onTime,onSaveText,onDelete}) {
+  const[editing,setEditing]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{if(editing&&ref.current){ref.current.focus();fitTextarea(ref.current);}},[editing]);
+  const save=()=>{const v=ref.current?.value??entry.text;onSaveText(v);setEditing(false);};
+  return(
+    <div style={card}><div style={{padding:"12px 16px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <div style={{width:4,height:20,borderRadius:2,background:CAT.memo.color,flexShrink:0}}/>
+        <div style={{flex:1}}><TimeCell iso={entry.time} color={CAT.memo.color} dim={CAT.memo.dim} showRemove={false} onUpdate={onTime} onRemove={()=>{}}/></div>
+        {!editing&&<button onClick={()=>setEditing(true)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>}
+      </div>
+      {editing?(
+        <div>
+          <textarea ref={ref} defaultValue={entry.text||""} rows={1} onInput={e=>fitTextarea(e.target)}
+            style={{width:"100%",border:"none",borderBottom:"1px solid rgba(0,0,0,0.1)",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.7)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",paddingBottom:8,marginBottom:12,overflow:"hidden"}}/>
+          <div style={{display:"flex",gap:8}}>
+            <button onMouseDown={e=>e.preventDefault()} onClick={onDelete} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+            <button onMouseDown={e=>{e.preventDefault();setEditing(false);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+            <button onMouseDown={e=>{e.preventDefault();save();}} style={{...smBtn(CAT.memo.color),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+          </div>
+        </div>
+      ):(
+        <p style={{fontSize:13,color:"rgba(0,0,0,0.65)",lineHeight:1.6,whiteSpace:"pre-wrap",paddingLeft:12}}>{entry.text}</p>
+      )}
+    </div></div>
+  );
+}
+
+
+// ── 気分日記タブ ──────────────────────────────────────────
+// レコード形式: records[ds] = { mood:0-4|null, tags:[tagId...], diary:"", condition:1-5|null, sleep:1-5|null }
+function RatingCard({field,value,onChange}) {
+  const[open,setOpen]=useState(false);
+  return(
+    <div style={{...card,marginBottom:10}}>
+      <div style={{padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{field.label}</span>
+          {value!=null&&(
+            <span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.55)",background:field.color,borderRadius:14,padding:"3px 12px"}}>
+              {RATING_LABELS[value-1]}
+            </span>
+          )}
+          <button onClick={()=>setOpen(o=>!o)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+        </div>
+        {open&&(
+          <div style={{display:"flex",gap:4,marginTop:12}}>
+            {RATING_LABELS.map((lb,i)=>{const n=i+1;const on=value===n;return(
+              <button key={n} onClick={()=>{onChange(on?null:n);setOpen(false);}}
+                style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                  background:on?field.color:"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                {lb}
+              </button>
+            );})}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function MoodTab({records,tagConf,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const rec=records[curDate]||{};
+  const tags=tagConf?.tags||[];
+  const patch=p=>{
+    const next={...rec,...p};
+    const nx={...records};
+    const empty=next.mood==null&&!(next.tags||[]).length&&!(next.diary||"").trim()&&next.condition==null&&next.sleep==null;
+    if(empty)delete nx[curDate];else nx[curDate]=next;
+    onUpdate(nx);
+  };
+  // タグは {id,name} で焼き込み保存（旧形式=ID文字列とも互換）
+  const tagId=t=>typeof t==="string"?t:t.id;
+  const isTagOn=id=>(rec.tags||[]).some(t=>tagId(t)===id);
+  const toggleTag=tag=>{
+    const cur=rec.tags||[];
+    const on=cur.some(t=>tagId(t)===tag.id);
+    patch({tags:on?cur.filter(t=>tagId(t)!==tag.id):[...cur,{id:tag.id,name:tag.name}]});
+  };
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+
+      {/* 今日の気分 */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 10px"}}>今日の気分</p>
+        <div style={{display:"flex",gap:4}}>
+          {MOOD_LABELS.map((lb,i)=>(
+            <button key={i} onClick={()=>patch({mood:rec.mood===i?null:i})}
+              style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                background:rec.mood===i?MOOD_COLORS[i]:"rgba(0,0,0,0.06)",color:rec.mood===i?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+              {lb}
+            </button>
+          ))}
+        </div>
+      </div></div>
+
+      {/* 出来事タグ */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 10px"}}>出来事タグ</p>
+        {tags.length===0
+          ?<p style={{fontSize:11,color:"rgba(0,0,0,0.3)"}}>設定からタグを追加できます</p>
+          :<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {tags.map(t=>{const on=isTagOn(t.id);return(
+              <button key={t.id} onClick={()=>toggleTag(t)}
+                style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+                  background:on?(t.color||"#b8d8f0"):"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+                {t.name}
+              </button>
+            );})}
+          </div>}
+      </div></div>
+
+      {/* 日記 */}
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        <p style={{...secLbl,margin:"0 0 8px"}}>日記</p>
+        <DiaryField key={curDate} value={rec.diary||""} onChange={v=>patch({diary:v})}/>
+      </div></div>
+
+      {/* 体調・睡眠 */}
+      {RATING_FIELDS.map(f=>(
+        <RatingCard key={f.key} field={f} value={rec[f.key]??null} onChange={v=>patch({[f.key]:v})}/>
+      ))}
+    </div>
+  );
+}
+function DiaryField({value,onChange}) {
+  const ref=useAutoGrow([value]);
+  return(
+    <textarea ref={ref} defaultValue={value} rows={2} placeholder="今日の日記を自由に記入…"
+      onInput={e=>fitTextarea(e.target)} onBlur={e=>onChange(e.target.value)}
+      style={{width:"100%",border:"none",background:"transparent",fontSize:13,color:"rgba(0,0,0,0.7)",outline:"none",resize:"none",lineHeight:1.7,fontFamily:"inherit",minHeight:60,overflow:"hidden"}}/>
+  );
+}
+
+// ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
+function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethConf}) {
+  const[search,setSearch]=useState("");
+  const q=search.trim().toLowerCase();
+  const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
+  const today=todayKey();
+  const sortT=(a,b)=>!a.t&&!b.t?0:!a.t?1:!b.t?-1:a.t.localeCompare(b.t);
+  // 日付文字列が検索語にマッチするか（複数表記に対応）
+  const dateMatches=ds=>{
+    if(!q)return false;
+    const[y,m,d]=ds.split("-");
+    const mm=String(+m),dd=String(+d);
+    const wd=WDL[dateWd(ds)];
+    const forms=[
+      ds,                              // 2026-06-28
+      `${y}/${m}/${d}`,`${y}/${mm}/${dd}`,
+      `${m}/${d}`,`${mm}/${dd}`,        // 06/28, 6/28
+      `${m}-${d}`,`${mm}-${dd}`,
+      `${mm}月${dd}日`,`${dd}日`,`${mm}月`,
+      `${y}年${mm}月${dd}日`,`${y}年`,`${y}年${mm}月`,
+      wd,`${wd}曜`,`${wd}曜日`,
+    ];
+    return forms.some(f=>f.toLowerCase().includes(q));
+  };
+  const matchItem=it=>(it.label||"").toLowerCase().includes(q)||(it.sub||"").toLowerCase().includes(q);
+  // 日付がヒットした日はその日の全項目を表示
+  let dayHit=false;
+  const matchQ=it=>!q||dayHit||matchItem(it);
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <div style={{...card,marginBottom:10}}>
+        <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.35)"}}>検索</span>
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="キーワードで絞り込み"
+            style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+          {search&&<button onClick={()=>setSearch("")} style={icoBtn}>✕</button>}
+        </div>
+      </div>
+      {allKeys.length===0&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:32}}>まだ記録がありません</p>}
+      {allKeys.map(ds=>{
+        dayHit=dateMatches(ds);
+        const bath=bathR[ds]||[],med=medR[ds]||{},meal=mealR[ds]||[],teeth=teethR[ds],memo=memoR[ds]||[],mood=moodR[ds]||null;
+        const wd=dateWd(ds);
+        const aS=SLOT_DEFS.filter(s=>medConf.slots[s.id]?.enabled);
+        const dW=medConf.weeklyMeds.filter(wm=>wm.weekdays.includes(wd));
+        const memoItems=memo.map(e=>({t:e.time,label:"メモ",color:CAT.memo.color,sub:e.text})).filter(matchQ).sort(sortT);
+        const bathItems=bath.map(e=>({t:e.time,label:"入浴",color:CAT.bath.color,sub:e.memo})).filter(matchQ).sort(sortT);
+        const teethItems=(Array.isArray(teeth)?teeth:[]).map(e=>{const it=(teethConf?.items||[]).find(x=>x.id===e.itemId);return{t:e.time,label:e.itemName||"歯磨き",color:(it&&it.color)||CAT.teeth.color,sub:""};}).filter(matchQ).sort(sortT);
+        const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.fullness?FULLNESS_LABELS[e.fullness-1]:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
+        const medItems=[];
+        aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
+        dW.forEach(wm=>{const k=`w:${wm.id}`;if(med[k])medItems.push({t:med[k],label:(med.__names&&med.__names[k]?med.__names[k][0]:wm.name),color:WC,sub:""});});
+        (Array.isArray(med.prnList)?med.prnList:[]).forEach(e=>medItems.push({t:e.time,label:`頓服 ${e.name}`,color:e.color||"#d0d0d0",sub:""}));
+        if(med.prn)medItems.push({t:null,label:"頓服メモ",color:"#f5e6b0",sub:med.prn});
+        const filteredMed=medItems.filter(matchQ).sort(sortT);
+        const moodItems=[];
+        if(mood){
+          const allTags=tagConf?.tags||[];
+          if(mood.mood!=null)moodItems.push({t:null,label:`気分: ${MOOD_LABELS[mood.mood]}`,color:MOOD_COLORS[mood.mood],sub:""});
+          const tagNames=(mood.tags||[]).map(t=>typeof t==="string"?((allTags.find(x=>x.id===t)||{}).name):t.name).filter(Boolean);
+          if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#b8d8f0",sub:tagNames.join("・")});
+          if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
+          if(mood.condition!=null)moodItems.push({t:null,label:"体調",color:"#cfe0f2",sub:RATING_LABELS[mood.condition-1]});
+          if(mood.sleep!=null)moodItems.push({t:null,label:"睡眠",color:"#ddd2f0",sub:RATING_LABELS[mood.sleep-1]});
+        }
+        const filteredMood=moodItems.filter(matchQ);
+        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
+        if(!groups.length)return null;
+        return(
+          <div key={ds} style={card}><div style={{padding:"12px 16px"}}>
+            <p style={{fontSize:12,fontWeight:700,color:"rgba(0,0,0,0.55)",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              {fmtDate(ds)}
+              {ds===today&&<span style={{fontSize:10,fontWeight:600,background:"rgba(0,0,0,0.06)",color:"rgba(0,0,0,0.35)",borderRadius:6,padding:"1px 6px"}}>今日</span>}
+            </p>
+            {groups.map((g,gi)=>(
+              <div key={g.key}>
+                {gi>0&&<div style={{borderTop:"1px solid rgba(0,0,0,0.06)",margin:"6px 0"}}/>}
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {g.items.map((it,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                      <div style={{width:3,height:18,borderRadius:2,background:it.color,flexShrink:0,alignSelf:"flex-start"}}/>
+                      <div style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:5}}>
+                        <span style={{fontSize:12,lineHeight:"18px",color:"rgba(0,0,0,0.55)",flexShrink:0}}>{it.label}</span>
+                        {it.sub&&<span style={{flex:1,minWidth:0,fontSize:10,lineHeight:"18px",color:"rgba(0,0,0,0.3)",wordBreak:"break-word"}}>{it.sub}</span>}
+                      </div>
+                      {it.t&&<span style={{fontSize:11,lineHeight:"18px",fontWeight:600,color:"rgba(0,0,0,0.4)",flexShrink:0}}>{isoHM(it.t)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div></div>
+        );
+      })}
+      {q&&allKeys.every(ds=>{/* check if search has any results */return false;})&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:20}}>該当する記録がありません</p>}
+    </div>
+  );
+}
+
+// ── 統計：カレンダー ──────────────────────────────────────
+function MonthCalendar({month,bathR,teethR}) {
+  const[y,m]=month.split("-");
+  const fd=new Date(+y,+m-1,1).getDay();
+  const dim=dimY(y,m);
+  const today=todayKey();
+  const cells=[];
+  for(let i=0;i<fd;i++)cells.push(null);
+  for(let d=1;d<=dim;d++)cells.push(d);
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:4}}>
+        {["日","月","火","水","木","金","土"].map((d,i)=>(
+          <div key={i} style={{textAlign:"center",fontSize:9,color:i===0?"rgba(200,50,50,0.55)":i===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.3)",paddingBottom:2}}>{d}</div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px 0"}}>
+        {cells.map((day,i)=>{
+          if(!day)return<div key={i} style={{height:28}}/>;
+          const ds=padDate(y,+m,day);
+          const bath=bathR[ds]?.length>0;
+          const teeth=Array.isArray(teethR[ds])&&teethR[ds].length>0;
+          const isToday=ds===today,isFuture=ds>today;
+          const dow=(fd+day-1)%7;
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",height:28,paddingTop:1}}>
+              <div style={{width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",flexShrink:0,background:"transparent"}}>
+                <span style={{fontSize:10,lineHeight:1,fontWeight:isToday?700:400,color:isFuture?"rgba(0,0,0,0.15)":dow===0?"rgba(200,50,50,0.55)":dow===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.55)"}}>{day}</span>
+              </div>
+              {!isFuture&&(bath||teeth)&&(
+                <div style={{display:"flex",gap:2,marginTop:1}}>
+                  {bath&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.bath.color}}/>}
+                  {teeth&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.teeth.color}}/>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.bath.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>入浴</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.teeth.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>歯磨き</span></div>
+      </div>
+    </div>
+  );
+}
+
+// ── 統計：服薬チャート ─────────────────────────────────────
+function MedTimingChart({records,config,month}) {
+  const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
+  const H=160,Y0=6,Y1=26,YR=Y1-Y0;
+  // 系列を構築：各スロット + 曜日薬
+  const aSlots=SLOT_DEFS.filter(s=>config.slots[s.id]?.enabled);
+  const series=[
+    ...aSlots.map(s=>({key:s.id,label:s.label,color:s.color,weekly:false})),
+    ...config.weeklyMeds.map(wm=>({key:`w:${wm.id}`,label:wm.name,color:WC,weekly:true,weekdays:wm.weekdays})),
+  ];
+  // 各系列につき、日ごとの服用時刻（h）を集める
+  const toH=iso=>{const t=new Date(iso);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;return (h>=Y0&&h<=Y1)?h:null;};
+  const seriesData=series.map(s=>{
+    const pts=[];
+    for(let day=1;day<=dim;day++){
+      const ds=padDate(y,+m,day);
+      // 曜日薬は「服用対象の曜日」だけを対象日とする（非対象日は配列に入れず線を連続させる）
+      if(s.weekly&&!s.weekdays.includes(dateWd(ds)))continue;
+      if(ds>today){pts.push({day,h:null,future:true});continue;}
+      const dr=records[ds]||{};const iso=dr[s.key];
+      pts.push({day,h:iso?toH(iso):null});
+    }
+    return {...s,pts};
+  });
+  const has=seriesData.some(s=>s.pts.some(p=>p.h!=null));
+  const ticks=[6,9,12,15,18,21,24];
+  if(!has)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>今月の記録がありません</p>;
+  const xOf=day=>dim>1?((day-1)/(dim-1))*100:50;
+  const yOf=h=>((h-Y0)/YR)*100;
+  return(
+    <div>
+      <div style={{display:"flex"}}>
+        <div style={{width:28,position:"relative",height:H,flexShrink:0}}>
+          {ticks.map(h=><div key={h} style={{position:"absolute",right:4,top:`${yOf(h)}%`,fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",textAlign:"right",whiteSpace:"nowrap"}}>{h>=24?`${h-24}時`:`${h}時`}</div>)}
+        </div>
+        <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8,overflow:"hidden"}}>
+          {ticks.map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${yOf(h)}%`,height:1,background:"rgba(0,0,0,0.07)"}}/>)}
+          <svg viewBox="0 0 100 100" style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+            {seriesData.map(s=>{
+              // 連続して記録のある区間ごとにパスを分割（途切れたら新しいパス）
+              const paths=[];let run=[];
+              const flush=()=>{if(run.length){paths.push(run);run=[];}};
+              s.pts.forEach(p=>{ if(p.h==null||p.future){flush();return;} run.push({x:xOf(p.day),y:yOf(p.h)}); });
+              flush();
+              return paths.map((pp,idx)=>(
+                <path key={s.key+"-"+idx} d={smoothPath(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+              ));
+            })}
+          </svg>
+          <span style={{position:"absolute",bottom:2,left:2,fontSize:8,color:"rgba(0,0,0,0.25)"}}>1日</span>
+          <span style={{position:"absolute",bottom:2,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{Math.round(dim/2)}日</span>
+          <span style={{position:"absolute",bottom:2,right:2,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{dim}日</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}}>
+        {series.map(s=><div key={s.key} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:14,height:3,borderRadius:2,background:s.color}}/><span style={{fontSize:9,color:"rgba(0,0,0,0.4)"}}>{s.label}</span></div>)}
+      </div>
+    </div>
+  );
+}
+
+// ── 統計：食事カロリー ─────────────────────────────────────
+function DailyCalChart({records,month}) {
+  const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
+  const daily=[];
+  for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);const total=(records[ds]||[]).reduce((s,e)=>s+(e.calories||0),0);daily.push({d,total,future:ds>today});}
+  const monthTotal=daily.reduce((s,d)=>s+(d.future?0:d.total),0);
+  const maxCal=Math.max(...daily.map(d=>d.total),1);
+  if(monthTotal===0)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>今月のカロリー記録がありません</p>;
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:10}}>
+        <span style={{fontSize:22,fontWeight:700,color:"rgba(0,0,0,0.65)"}}>{monthTotal.toLocaleString()}</span>
+        <span style={{fontSize:11,color:"rgba(0,0,0,0.35)"}}>kcal（月合計）</span>
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:"2px",height:44}}>
+        {daily.map(({d,total,future})=><div key={d} style={{flex:1,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{width:"40%",height:future?0:total>0?Math.max(2,Math.round(total/maxCal*40)):1,background:future?"transparent":total>0?CAT.meal.color:"rgba(0,0,0,0.06)",borderRadius:"99px 99px 0 0"}}/></div>)}
+      </div>
+      <div style={{borderTop:"1px solid rgba(0,0,0,0.06)",paddingTop:2,display:"flex",justifyContent:"space-between"}}>
+        <span style={{fontSize:8,color:"rgba(0,0,0,0.25)"}}>1日</span><span style={{fontSize:8,color:"rgba(0,0,0,0.25)"}}>{fmtMonth(month)}</span><span style={{fontSize:8,color:"rgba(0,0,0,0.25)"}}>{dim}日</span>
+      </div>
+    </div>
+  );
+}
+
+// ── 統計タブ ──────────────────────────────────────────────
+function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
+  const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
+  const prev=()=>setMonth(addMonths(month,-1));
+  const next=()=>{const n=addMonths(month,1);if(n<=curMonth)setMonth(n);};
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next} onPick={setMonth}/>
+      <p style={secLbl}>受診用サマリー</p>
+      <div style={card}><div style={{padding:"14px 16px"}}><ClinicSummary month={month} medR={medR} medConf={medConf} moodR={moodR} bathR={bathR} mealR={mealR}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>入浴・歯磨き</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MonthCalendar month={month} bathR={bathR} teethR={teethR}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>服薬の時間帯</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MedTimingChart records={medR} config={medConf} month={month}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><DailyCalChart records={mealR} month={month}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>気分・体調・睡眠</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MoodCombinedChart records={moodR} month={month}/></div></div>
+    </div>
+  );
+}
+
+
+
+// ── 統計：受診用サマリー ──────────────────────────────────
+function ClinicSummary({month,medR,medConf,moodR,bathR,mealR}) {
+  const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
+  // 対象日数（未来は除く）
+  let daysInScope=0;
+  for(let d=1;d<=dim;d++){if(padDate(y,+m,d)<=today)daysInScope++;}
+  if(daysInScope===0)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>この月のデータはありません</p>;
+
+  // ── 服薬集計 ──
+  const aSlots=SLOT_DEFS.filter(s=>medConf.slots[s.id]?.enabled);
+  const slotStats=aSlots.map(s=>{
+    let taken=0;
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;if((medR[ds]||{})[s.id])taken++;}
+    return{label:s.label,color:s.color,taken,total:daysInScope,pct:Math.round(taken/daysInScope*100)};
+  });
+  const weeklyStats=medConf.weeklyMeds.map(wm=>{
+    let due=0,taken=0;
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;if(!wm.weekdays.includes(dateWd(ds)))continue;due++;if((medR[ds]||{})[`w:${wm.id}`])taken++;}
+    return{label:wm.name,color:WC,taken,total:due,pct:due?Math.round(taken/due*100):null};
+  }).filter(w=>w.total>0);
+  // 頓服回数（prnList件数 + prnメモのある日数）
+  let prnCount=0,prnNoteDays=0;
+  for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;const dr=medR[ds]||{};
+    if(Array.isArray(dr.prnList))prnCount+=dr.prnList.length;
+    if(dr.prn&&dr.prn.trim())prnNoteDays++;}
+
+  // ── 気分・体調・睡眠 集計 ──
+  const collect=getV=>{
+    const vals=[];
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;const r=moodR[ds];const v=r?getV(r):null;if(v!=null)vals.push(v);}
+    return vals;
+  };
+  const fields=[
+    {label:"気分",vals:collect(r=>r.mood!=null?r.mood+1:null)},
+    {label:"体調",vals:collect(r=>r.condition??null)},
+    {label:"睡眠",vals:collect(r=>r.sleep??null)},
+  ];
+  const fmtField=f=>{
+    if(!f.vals.length)return null;
+    const avg=f.vals.reduce((s,v)=>s+v,0)/f.vals.length;
+    const low=f.vals.filter(v=>v<=2).length; // 悪い・最悪の日数
+    return{...f,avg,avgLabel:RATING_LABELS[Math.min(4,Math.max(0,Math.round(avg)-1))],low,n:f.vals.length};
+  };
+  const fieldStats=fields.map(fmtField).filter(Boolean);
+
+  const Row=({label,right,color})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0"}}>
+      {color&&<div style={{width:3,height:14,borderRadius:2,background:color,flexShrink:0}}/>}
+      <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{label}</span>
+      <span style={{fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.55)"}}>{right}</span>
+    </div>
+  );
+
+  return(
+    <div>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",marginBottom:6}}>服薬</p>
+      {slotStats.map(s=><Row key={s.label} label={s.label} color={s.color} right={`${s.taken}/${s.total}日（${s.pct}%）`}/>)}
+      {weeklyStats.map(w=><Row key={w.label} label={w.label} color={w.color} right={`${w.taken}/${w.total}回（${w.pct}%）`}/>)}
+      {(prnCount>0||prnNoteDays>0)&&(
+        <Row label="頓服" color="#f5e6b0" right={prnCount>0?`${prnCount}回${prnNoteDays>0?`（メモ${prnNoteDays}日）`:""}`:`メモ${prnNoteDays}日`}/>
+      )}
+      {fieldStats.length>0&&<>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>気分・体調・睡眠</p>
+        {fieldStats.map(f=>(
+          <Row key={f.label} label={`${f.label}（記録${f.n}日）`}
+            right={`平均 ${f.avgLabel}・悪い日 ${f.low}日`}/>
+        ))}
+      </>}
+      {(()=>{
+        // ── 生活：入浴回数・平均カロリー ──
+        let bathCount=0;
+        let calSum=0,calDays=0;
+        for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+          bathCount+=(Array.isArray(bathR?.[ds])?bathR[ds].length:0);
+          const meals=Array.isArray(mealR?.[ds])?mealR[ds]:[];
+          const dayCal=meals.reduce((s,e)=>s+(e.calories||0),0);
+          if(dayCal>0){calSum+=dayCal;calDays++;}
+        }
+        if(bathCount===0&&calDays===0)return null;
+        return(<>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>生活</p>
+          {bathCount>0&&<Row label="入浴" color={CAT.bath.color} right={`${bathCount}回`}/>}
+          {calDays>0&&<Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>}
+        </>);
+      })()}
+      {fieldStats.length===0&&slotStats.every(s=>s.taken===0)&&prnCount===0&&(
+        <p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"8px 0"}}>この月の記録がありません</p>
+      )}
+    </div>
+  );
+}
+
+// ── 統計：気分チャート（月／年トグル）─────────────────────
+function MoodCombinedChart({records,month}) {
+  const today=todayKey();
+  const SERIES=[
+    { key:"mood",      label:"気分", color:CAT.mood.color, get:r=>r.mood!=null?r.mood+1:null },
+    { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
+    { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
+  ];
+  // 表示モード：気分/体調/睡眠の単独 or "all"（比較）
+  const[mode,setMode]=useState("all");
+  const levels=5;
+  const[y,m]=month.split("-");const dim=dimY(y,m);const N=dim;
+  const xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
+  const buildSeries=getV=>{
+    const pts=[];
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);const r=records[ds];pts.push({i:d-1,v:r?getV(r):null,future:ds>today});}
+    return pts;
+  };
+  const seriesData=SERIES.map(s=>({...s,pts:buildSeries(s.get)}));
+  const has=seriesData.some(s=>s.pts.some(p=>p.v!=null&&!p.future));
+  const H=130;
+  const yOf=v=>H-8-((v-1)/(levels-1))*(H-16);
+  const xOf=i=>N>1?(i/(N-1))*100:50;
+  // 折れ線パス（記録が途切れたら分割）
+  const polySegs=s=>{
+    const paths=[];let run=[];
+    const flush=()=>{if(run.length>1)paths.push(run);run=[];};
+    s.pts.forEach(p=>{ if(p.v==null||p.future){flush();return;} run.push({x:xOf(p.i),y:yOf(p.v)}); });
+    flush();return paths;
+  };
+  const lineD=pp=>pp.map((p,idx)=>`${idx?"L":"M"} ${p.x} ${p.y}`).join(" ");
+  const visible=mode==="all"?seriesData:seriesData.filter(s=>s.key===mode);
+
+  return(
+    <div>
+      {/* モード切替：単独 ＋ 比較 */}
+      <div style={{display:"flex",gap:6,marginBottom:10,justifyContent:"center",flexWrap:"wrap"}}>
+        {SERIES.map(s=>{const on=mode===s.key;return(
+          <button key={s.key} onClick={()=>setMode(s.key)}
+            style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
+              background:on?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
+            <div style={{width:14,height:3,borderRadius:2,background:s.color}}/>
+            <span style={{fontSize:10,fontWeight:600,color:on?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>{s.label}</span>
+          </button>
+        );})}
+        <button onClick={()=>setMode("all")}
+          style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
+            background:mode==="all"?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
+          <div style={{width:14,height:3,borderRadius:2,background:"#c8c8c8"}}/>
+          <span style={{fontSize:10,fontWeight:600,color:mode==="all"?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>比較</span>
+        </button>
+      </div>
+      {!has
+        ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
+        :<div style={{display:"flex"}}>
+          <div style={{width:38,position:"relative",height:H,flexShrink:0}}>
+            {[5,4,3,2,1].map(v=>(
+              <div key={v} style={{position:"absolute",right:4,top:yOf(v),fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",whiteSpace:"nowrap"}}>{RATING_LABELS[v-1]}</div>
+            ))}
+          </div>
+          <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
+            {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
+            <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+              {visible.map(s=>polySegs(s).map((pp,idx)=>(
+                <path key={s.key+"-"+idx} d={lineD(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+              )))}
+            </svg>
+            {/* 日付ごとの点（SVG外のdivで真円を保つ） */}
+            {visible.map(s=>s.pts.filter(p=>p.v!=null&&!p.future).map(p=>(
+              <div key={s.key+"-pt-"+p.i} style={{position:"absolute",left:`${xOf(p.i)}%`,top:yOf(p.v),width:5,height:5,borderRadius:"50%",background:s.color,transform:"translate(-50%,-50%)"}}/>
+            )))}
+            <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
+            <span style={{position:"absolute",bottom:-14,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{xLabels[1]}</span>
+            <span style={{position:"absolute",bottom:-14,right:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[2]}</span>
+          </div>
+        </div>}
+      <div style={{height:8}}/>
+    </div>
+  );
+}
+
+// ── 服薬設定（削除バグ修正・編集ボタン常時表示）───────────
+function MedSettingsSection({config,onConfigChange}) {
+  const[newMeds,setNewMeds]=useState(Object.fromEntries(SLOT_DEFS.map(s=>[s.id,""])));
+  const[editingMed,setEditingMed]=useState(null);
+  const[editingW,setEditingW]=useState(null);
+  const[newWN,setNewWN]=useState("");const[newWD,setNewWD]=useState([]);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editingMed&&editRef.current)editRef.current.focus();},[editingMed]);
+  const upd=(id,p)=>onConfigChange({...config,slots:{...config.slots,[id]:{...config.slots[id],...p}}});
+  const tog=id=>upd(id,{enabled:!config.slots[id].enabled});
+  const addM=sId=>{const n=newMeds[sId].trim();if(!n)return;upd(sId,{meds:[...(config.slots[sId]?.meds||[]),{id:uid(),name:n}]});setNewMeds(p=>({...p,[sId]:""}));};
+  // 編集保存：空名の場合もeditingMedを閉じる
+  const saveE=(sId,mId,n)=>{n=n.trim();if(n)upd(sId,{meds:config.slots[sId].meds.map(m=>m.id===mId?{...m,name:n}:m)});setEditingMed(null);};
+  const delM=(sId,mId)=>upd(sId,{meds:config.slots[sId].meds.filter(m=>m.id!==mId)});
+  const addW=()=>{const n=newWN.trim();if(!n||!newWD.length)return;onConfigChange({...config,weeklyMeds:[...config.weeklyMeds,{id:uid(),name:n,weekdays:[...newWD]}]});setNewWN("");setNewWD([]);};
+  const remW=id=>onConfigChange({...config,weeklyMeds:config.weeklyMeds.filter(wm=>wm.id!==id)});
+  const saveW=()=>{if(!editingW||!editingW.name.trim()||!editingW.weekdays.length)return;onConfigChange({...config,weeklyMeds:config.weeklyMeds.map(wm=>wm.id===editingW.id?{...wm,name:editingW.name.trim(),weekdays:editingW.weekdays}:wm)});setEditingW(null);};
+  return(<>
+    {SLOT_DEFS.map(s=>{
+      const sc=config.slots[s.id]||{enabled:true,meds:[]};const meds=(sc.meds||[]).map(normMed);
+      return(
+        <div key={s.id} style={card}>
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10,borderBottom:sc.enabled?"1px solid rgba(0,0,0,0.05)":"none"}}>
+            <div style={{width:4,height:20,borderRadius:2,background:sc.enabled?s.color:"rgba(0,0,0,0.08)",flexShrink:0}}/>
+            <span style={{flex:1,fontSize:13,fontWeight:600,color:sc.enabled?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.3)"}}>{s.label}</span>
+            <button onClick={()=>tog(s.id)} style={{...smBtn(sc.enabled?s.dim:"rgba(0,0,0,0.06)"),color:sc.enabled?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.3)"}}>{sc.enabled?"無効にする":"有効にする"}</button>
+          </div>
+          {sc.enabled&&<div style={{padding:"8px 16px 12px"}}>
+            {meds.map(med=>{
+              const isE=editingMed?.slotId===s.id&&editingMed?.medId===med.id;
+              return(
+                <div key={med.id} style={{borderBottom:"1px solid rgba(0,0,0,0.04)"}}>
+                  {isE?(
+                    <div style={{padding:"5px 0 10px"}}>
+                      <input ref={editRef} defaultValue={med.name}
+                        onKeyDown={e=>{if(e.key==="Enter")saveE(s.id,med.id,editRef.current?.value||"");}}
+                        style={{...inp,marginBottom:10}}/>
+                      <div style={{display:"flex",gap:8}}>
+                        <button onMouseDown={e=>e.preventDefault()} onClick={()=>{delM(s.id,med.id);setEditingMed(null);}}
+                          style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+                        <button onMouseDown={e=>{e.preventDefault();setEditingMed(null);}}
+                          style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+                        <button onMouseDown={e=>{e.preventDefault();saveE(s.id,med.id,editRef.current?.value||"");}}
+                          style={{...smBtn(s.color),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+                      </div>
+                    </div>
+                  ):(
+                    <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0"}}>
+                      <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{med.name}</span>
+                      <button onClick={()=>setEditingMed({slotId:s.id,medId:med.id})} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
+              <input type="text" placeholder="薬を追加…" value={newMeds[s.id]}
+                onChange={e=>setNewMeds(p=>({...p,[s.id]:e.target.value}))}
+                onKeyDown={e=>{if(e.key==="Enter")addM(s.id);}} style={{...inp,flex:1}}/>
+              <button onClick={()=>addM(s.id)} style={smBtn(s.color)}>追加</button>
+            </div>
+          </div>}
+        </div>
+      );
+    })}
+    {config.weeklyMeds.map(wm=>{
+      const isE=editingW?.id===wm.id;
+      return(
+        <div key={wm.id} style={card}>
+          {isE?(
+            <div style={{padding:"12px 16px"}}>
+              <input value={editingW.name} onChange={e=>setEditingW(p=>({...p,name:e.target.value}))} style={{...inp,marginBottom:10}}/>
+              <div style={{display:"flex",gap:4,marginBottom:10}}>
+                {WDL.map((lb,i)=><button key={i} onClick={()=>setEditingW(p=>({...p,weekdays:p.weekdays.includes(i)?p.weekdays.filter(x=>x!==i):[...p.weekdays,i]}))} style={{flex:1,padding:"6px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:editingW.weekdays.includes(i)?WC:"rgba(0,0,0,0.06)",color:editingW.weekdays.includes(i)?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.25)"}}>{lb}</button>)}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{remW(wm.id);setEditingW(null);}} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"7px 10px"}}>削除</button>
+                <button onClick={()=>setEditingW(null)} style={{...smBtn(),flex:1,padding:"7px 0",fontSize:11}}>キャンセル</button>
+                <button onClick={saveW} style={{...smBtn(editingW.name.trim()&&editingW.weekdays.length?WC:"rgba(0,0,0,0.05)"),flex:2,padding:"7px 0",fontSize:11,fontWeight:700}}>保存</button>
+              </div>
+            </div>
+          ):(
+            <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
+              <div style={{width:4,height:20,borderRadius:2,background:WC,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <p style={{fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{wm.name}</p>
+                <p style={{fontSize:11,color:"rgba(0,0,0,0.35)",marginTop:2}}>{wm.weekdays.sort().map(d=>WDL[d]).join("・")}曜日</p>
+              </div>
+              <button onClick={()=>setEditingW({id:wm.id,name:wm.name,weekdays:[...wm.weekdays]})} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+            </div>
+          )}
+        </div>
+      );
+    })}
+    <div style={card}><div style={{padding:"12px 16px"}}>
+      <input type="text" placeholder="曜日限定の薬の名前" value={newWN} onChange={e=>setNewWN(e.target.value)} style={{...inp,marginBottom:10}}/>
+      <div style={{display:"flex",gap:4,marginBottom:10}}>
+        {WDL.map((lb,i)=><button key={i} onClick={()=>setNewWD(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])} style={{flex:1,padding:"6px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:newWD.includes(i)?WC:"rgba(0,0,0,0.06)",color:newWD.includes(i)?"rgba(0,0,0,0.5)":"rgba(0,0,0,0.25)"}}>{lb}</button>)}
+      </div>
+      <button onClick={addW} style={{width:"100%",padding:"8px",border:"none",borderRadius:10,fontFamily:"inherit",background:(newWN.trim()&&newWD.length)?WC:"rgba(0,0,0,0.06)",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.45)",cursor:"pointer"}}>追加</button>
+    </div></div>
+  </>);
+}
+
+// ── 歯磨き設定 ──────────────────────────────────────────
+function ColorPicker({value,onPick}) {
+  return(
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+      {PALETTE.map(col=>{const on=value===col;return(
+        <button key={col} onMouseDown={e=>{e.preventDefault();onPick(col);}}
+          style={{width:26,height:26,borderRadius:"50%",background:col,cursor:"pointer",flexShrink:0,
+            border:on?"2px solid rgba(0,0,0,0.45)":"1px solid rgba(0,0,0,0.1)",
+            boxShadow:on?"0 0 0 2px rgba(255,255,255,0.9) inset":"none"}}/>
+      );})}
+    </div>
+  );
+}
+function TeethSettingsSection({conf,onConfChange}) {
+  const[newName,setNewName]=useState("");
+  const[editId,setEditId]=useState(null);
+  const[editColor,setEditColor]=useState(null);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
+  const items=conf?.items||[];
+  const colOf=item=>item.color||CAT.teeth.color;
+  const openEdit=item=>{setEditId(item.id);setEditColor(colOf(item));};
+  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,items:[...items,{id:uid(),name:n,color:"#dddddd"}]});setNewName("");};
+  const rem=id=>{onConfChange({...conf,items:items.filter(i=>i.id!==id)});setEditId(null);};
+  const saveEdit=id=>{const n=(editRef.current?.value||"").trim();onConfChange({...conf,items:items.map(i=>i.id===id?{...i,...(n?{name:n}:{}),color:editColor||colOf(i)}:i)});setEditId(null);};
+  const mv=(id,dir)=>{const i=items.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=items.length)return;const a=[...items];[a[i],a[j]]=[a[j],a[i]];onConfChange({...conf,items:a});};
+  return(<>
+    {items.map((item,idx)=>(
+      <div key={item.id} style={{...card,marginBottom:6}}>
+        {editId===item.id?(
+          <div style={{padding:"12px 16px"}}>
+            <input ref={editRef} type="text" defaultValue={item.name}
+              onKeyDown={e=>{if(e.key==="Enter")saveEdit(item.id);}}
+              style={{...inp,marginBottom:12}}/>
+            <ColorPicker value={editColor} onPick={setEditColor}/>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>mv(item.id,-1)} disabled={idx===0} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===0?0.4:1}}>上へ</button>
+              <button onClick={()=>mv(item.id,1)} disabled={idx===items.length-1} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===items.length-1?0.4:1}}>下へ</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>rem(item.id)} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+              <button onMouseDown={e=>{e.preventDefault();saveEdit(item.id);}} style={{...smBtn(editColor||CAT.teeth.color),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+            </div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
+            <div style={{width:4,height:20,borderRadius:2,background:colOf(item),flexShrink:0}}/>
+            <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{item.name}</span>
+            <button onClick={()=>openEdit(item)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+          </div>
+        )}
+      </div>
+    ))}
+    <div style={card}><div style={{padding:"10px 16px",display:"flex",gap:8,alignItems:"center"}}>
+      <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
+        placeholder="アイテム名（例：電動歯ブラシ、フロス）"
+        style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+      <button onClick={add} style={smBtn("#dddddd")}>追加</button>
+    </div></div>
+  </>);
+}
+
+
+// ── 出来事タグ設定 ──────────────────────────────────────
+function TagSettingsSection({conf,onConfChange}) {
+  const TAG_DEF="#dddddd";
+  const[newName,setNewName]=useState("");
+  const[editId,setEditId]=useState(null);
+  const[editColor,setEditColor]=useState(null);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
+  const tags=conf?.tags||[];
+  const colOf=t=>t.color||TAG_DEF;
+  const openEdit=tag=>{setEditId(tag.id);setEditColor(colOf(tag));};
+  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,tags:[...tags,{id:uid(),name:n,color:TAG_DEF}]});setNewName("");};
+  const rem=id=>{onConfChange({...conf,tags:tags.filter(t=>t.id!==id)});setEditId(null);};
+  const saveEdit=id=>{const n=(editRef.current?.value||"").trim();onConfChange({...conf,tags:tags.map(t=>t.id===id?{...t,...(n?{name:n}:{}),color:editColor||colOf(t)}:t)});setEditId(null);};
+  const mv=(id,dir)=>{const i=tags.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=tags.length)return;const a=[...tags];[a[i],a[j]]=[a[j],a[i]];onConfChange({...conf,tags:a});};
+  return(<>
+    {tags.map((tag,idx)=>(
+      <div key={tag.id} style={{...card,marginBottom:6}}>
+        {editId===tag.id?(
+          <div style={{padding:"12px 16px"}}>
+            <input ref={editRef} type="text" defaultValue={tag.name}
+              onKeyDown={e=>{if(e.key==="Enter")saveEdit(tag.id);}}
+              style={{...inp,marginBottom:12}}/>
+            <ColorPicker value={editColor} onPick={setEditColor}/>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>mv(tag.id,-1)} disabled={idx===0} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===0?0.4:1}}>上へ</button>
+              <button onClick={()=>mv(tag.id,1)} disabled={idx===tags.length-1} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===tags.length-1?0.4:1}}>下へ</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>rem(tag.id)} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+              <button onMouseDown={e=>{e.preventDefault();saveEdit(tag.id);}} style={{...smBtn(editColor||TAG_DEF),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+            </div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:8}}>
+            <div style={{width:4,height:20,borderRadius:2,background:colOf(tag),flexShrink:0}}/>
+            <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{tag.name}</span>
+            <button onClick={()=>openEdit(tag)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+          </div>
+        )}
+      </div>
+    ))}
+    <div style={card}><div style={{padding:"10px 16px",display:"flex",gap:8,alignItems:"center"}}>
+      <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
+        placeholder="タグ名（例：通院、外出、来客）"
+        style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+      <button onClick={add} style={smBtn(TAG_DEF)}>追加</button>
+    </div></div>
+  </>);
+}
+
+
+// ── 頓服プリセット設定 ──────────────────────────────────
+function PrnSettingsSection({config,onConfigChange}) {
+  const PRN_DEF="#dddddd";
+  const[newName,setNewName]=useState("");
+  const[editId,setEditId]=useState(null);
+  const[editColor,setEditColor]=useState(null);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
+  const meds=config?.prnMeds||[];
+  const colOf=m=>m.color||PRN_DEF;
+  const openEdit=m=>{setEditId(m.id);setEditColor(colOf(m));};
+  const add=()=>{const n=newName.trim();if(!n)return;onConfigChange({...config,prnMeds:[...meds,{id:uid(),name:n,color:PRN_DEF}]});setNewName("");};
+  const rem=id=>{onConfigChange({...config,prnMeds:meds.filter(m=>m.id!==id)});setEditId(null);};
+  const saveEdit=id=>{const n=(editRef.current?.value||"").trim();onConfigChange({...config,prnMeds:meds.map(m=>m.id===id?{...m,...(n?{name:n}:{}),color:editColor||colOf(m)}:m)});setEditId(null);};
+  const mv=(id,dir)=>{const i=meds.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=meds.length)return;const a=[...meds];[a[i],a[j]]=[a[j],a[i]];onConfigChange({...config,prnMeds:a});};
+  return(<>
+    {meds.map((m,idx)=>(
+      <div key={m.id} style={{...card,marginBottom:6}}>
+        {editId===m.id?(
+          <div style={{padding:"12px 16px"}}>
+            <input ref={editRef} type="text" defaultValue={m.name} onKeyDown={e=>{if(e.key==="Enter")saveEdit(m.id);}} style={{...inp,marginBottom:12}}/>
+            <ColorPicker value={editColor} onPick={setEditColor}/>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>mv(m.id,-1)} disabled={idx===0} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===0?0.4:1}}>上へ</button>
+              <button onClick={()=>mv(m.id,1)} disabled={idx===meds.length-1} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===meds.length-1?0.4:1}}>下へ</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>rem(m.id)} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+              <button onMouseDown={e=>{e.preventDefault();saveEdit(m.id);}} style={{...smBtn(editColor||PRN_DEF),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+            </div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
+            <div style={{width:4,height:20,borderRadius:2,background:colOf(m),flexShrink:0}}/>
+            <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{m.name}</span>
+            <button onClick={()=>openEdit(m)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+          </div>
+        )}
+      </div>
+    ))}
+    <div style={card}><div style={{padding:"10px 16px",display:"flex",gap:8,alignItems:"center"}}>
+      <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
+        placeholder="頓服薬の名前（例：ロキソニン、頓服A）"
+        style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
+      <button onClick={add} style={smBtn(PRN_DEF)}>追加</button>
+    </div></div>
+  </>);
+}
+
+// ── 設定タブ ──────────────────────────────────────────────
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
+  const[confirmDel,setConfirmDel]=useState(false);
+  const[tabEditId,setTabEditId]=useState(null);
+  const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
+  const exp=()=>{const json=JSON.stringify({...allData,exportedAt:new Date().toISOString()},null,2);const fn=`lifelog-backup-${todayKey()}.json`;onBackedUp&&onBackedUp();if(navigator.share){const f=new File([json],fn,{type:"application/json"});navigator.share({files:[f]}).catch(()=>{});return;}const a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);};
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <p style={secLbl}>タブの表示</p>
+      {tabOrder.map((t,i)=>{const hidden=hiddenTabs.includes(t);const ed=tabEditId===t;return(
+        <div key={t} style={{...card,marginBottom:6,opacity:hidden?0.5:1}}>
+          {ed?(
+            <div style={{padding:"12px 16px"}}>
+              <p style={{fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)",marginBottom:12}}>{TAB_LABELS[t]}</p>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <button onClick={()=>mvTab(i,-1)} disabled={i===0} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===0?0.4:1}}>上へ</button>
+                <button onClick={()=>mvTab(i,1)} disabled={i===tabOrder.length-1} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===tabOrder.length-1?0.4:1}}>下へ</button>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>onToggleHidden(t)} style={{...smBtn("rgba(0,0,0,0.06)"),flex:1,padding:"9px 0",fontSize:11,color:hidden?"rgba(0,0,0,0.35)":"rgba(0,0,0,0.45)"}}>{hidden?"表示する":"非表示"}</button>
+                <button onClick={()=>setTabEditId(null)} style={{...smBtn("rgba(0,0,0,0.09)"),flex:1,padding:"9px 0",fontSize:11,fontWeight:700}}>完了</button>
+              </div>
+            </div>
+          ):(
+            <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{TAB_LABELS[t]}{hidden&&<span style={{fontSize:10,color:"rgba(0,0,0,0.3)",marginLeft:6}}>非表示</span>}</span>
+              <button onClick={()=>setTabEditId(t)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+            </div>
+          )}
+        </div>
+      );})}
+      <p style={{...secLbl,marginTop:12}}>出来事タグ</p>
+      <TagSettingsSection conf={tagConf} onConfChange={onTagConfChange}/>
+      <p style={{...secLbl,marginTop:12}}>歯磨きアイテム</p>
+      <TeethSettingsSection conf={teethConf} onConfChange={onTeethConfChange}/>
+      <p style={{...secLbl,marginTop:12}}>服薬設定</p>
+      <MedSettingsSection config={medConfig} onConfigChange={onMedConfigChange}/>
+      <p style={{...secLbl,marginTop:12}}>頓服プリセット</p>
+      <PrnSettingsSection config={medConfig} onConfigChange={onMedConfigChange}/>
+      <p style={{...secLbl,marginTop:12}}>バックアップ</p>
+      <div style={card}>
+        <div style={{padding:"12px 16px",display:"flex",gap:8}}>
+          <button onClick={exp} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:12}}>ファイルとして保存</button>
+          <label style={{...smBtn(),flex:1,padding:"9px 0",fontSize:12,textAlign:"center",cursor:"pointer",display:"block"}}>ファイルから復元<input type="file" accept=".json" onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{onImport(JSON.parse(ev.target.result));}catch{alert("読み込みに失敗しました");}};r.readAsText(f);e.target.value="";}} style={{display:"none"}}/></label>
+        </div>
+        <p style={{fontSize:10,color:"rgba(0,0,0,0.28)",padding:"0 16px 12px",lineHeight:1.5}}>データはこの端末のブラウザ（IndexedDB）に自動保存されます。</p>
+      </div>
+      <p style={{...secLbl,marginTop:12}}>データ管理</p>
+      <div style={card}><div style={{padding:"14px 16px"}}>
+        {confirmDel?<><p style={{fontSize:12,color:"rgba(0,0,0,0.55)",marginBottom:12}}>すべての記録・設定を削除します。この操作は取り消せません。</p><div style={{display:"flex",gap:8}}><button onClick={()=>setConfirmDel(false)} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:12}}>キャンセル</button><button onClick={()=>{onDeleteAll();setConfirmDel(false);}} style={{...smBtn("rgba(220,80,80,0.12)"),flex:1,padding:"9px 0",fontSize:12,color:"rgba(180,50,50,0.8)",fontWeight:700}}>削除する</button></div></>:<button onClick={()=>setConfirmDel(true)} style={{...smBtn("rgba(0,0,0,0.05)"),width:"100%",padding:"9px 0",fontSize:12,color:"rgba(0,0,0,0.38)"}}>すべてのデータを削除</button>}
+      </div></div>
+      <p style={{textAlign:"center",fontSize:10,color:"rgba(0,0,0,0.28)",marginTop:16}}>バージョン {APP_VERSION}</p>
+    </div>
+  );
+}
+
+// ── App ──────────────────────────────────────────────────
+function App() {
+  const[bathR,    setBathR]    =useState({});
+  const[medR,     setMedR]     =useState({});
+  const[medC,     setMedC]     =useState(defaultMedConf);
+  const[mealR,    setMealR]    =useState({});
+  const[teethR,   setTeethR]   =useState({});
+  const[teethConf,setTeethConf]=useState(defaultTeethConf);
+  const[memoR,    setMemoR]    =useState({});
+  const[moodR,    setMoodR]    =useState({});
+  const[tagConf,  setTagConf]  =useState(defaultTagConf);
+  const[tabOrder, setTabOrder] =useState(DEFAULT_TAB_ORDER);
+  const[hiddenTabs,setHiddenTabs]=useState([]);
+  // 初期タブは左端（DEFAULT_TAB_ORDER[0]）
+  const[tab,      setTab]      =useState(DEFAULT_TAB_ORDER[0]);
+  const[loaded,   setLoaded]   =useState(false);
+  const[backupDue,setBackupDue]=useState(false);
+  const dateNav=useDateNav(todayKey()); // 全記録タブで共有する日付ナビ
+
+  useEffect(()=>{
+    (async()=>{
+      await migrateMed();
+      const[br,mr,mc,mlr,tr,tc,mmr,mdr,tgc,as_]=await Promise.all([
+        dbGet(K.bath),dbGet(K.med),dbGet(K.medC),
+        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.memo),
+        dbGet(K.mood),dbGet(K.tagC),dbGet(K.set),
+      ]);
+      let conf=mc||defaultMedConf();const def=defaultMedConf();
+      conf={...def,...conf,slots:{...def.slots,...conf.slots}};
+      for(const sid of Object.keys(conf.slots))conf.slots[sid].meds=(conf.slots[sid].meds||[]).map(normMed);
+      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setMemoR(mmr||{});setMoodR(mdr||{});
+      if(tc)setTeethConf(tc);
+      if(tgc)setTagConf(tgc);
+      if(as_?.tabOrder){const p=as_.tabOrder.filter(t=>!SECONDARY_TABS.includes(t));const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));const merged=[...p,...missing];if(merged.length)setTabOrder(merged);}
+      if(as_?.hiddenTabs)setHiddenTabs(as_.hiddenTabs.filter(t=>!SECONDARY_TABS.includes(t)));
+      if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab))setTab(as_.lastTab);
+      // バックアップ催促：最後のバックアップから7日以上経過、または一度もしていない
+      const hasData=Object.keys(br||{}).length||Object.keys(mr||{}).length||Object.keys(mlr||{}).length||Object.keys(tr||{}).length||Object.keys(mmr||{}).length||Object.keys(mdr||{}).length;
+      const lb=as_?.lastBackup;
+      if(hasData&&(!lb||(Date.now()-lb)>604800000))setBackupDue(true);
+      setLoaded(true);
+    })();
+  },[]);
+
+  const saveBath  =useCallback(async nx=>{setBathR(nx);await dbSet(K.bath,nx);},[]);
+  const saveMed   =useCallback(async nx=>{setMedR(nx);await dbSet(K.med,nx);},[]);
+  const saveMedC  =useCallback(async nx=>{setMedC(nx);await dbSet(K.medC,nx);},[]);
+  const saveMeal  =useCallback(async nx=>{setMealR(nx);await dbSet(K.meal,nx);},[]);
+  const saveTeeth =useCallback(async nx=>{setTeethR(nx);await dbSet(K.teeth,nx);},[]);
+  const saveTeethC=useCallback(async nx=>{setTeethConf(nx);await dbSet(K.teethC,nx);},[]);
+  const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
+  const saveMood  =useCallback(async nx=>{setMoodR(nx);await dbSet(K.mood,nx);},[]);
+  const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
+  const saveSets  =useCallback(async patch=>{const cur=await dbGet(K.set)||{};await dbSet(K.set,{...cur,...patch});},[]);
+
+  const markBackedUp  =useCallback(()=>{setBackupDue(false);saveSets({lastBackup:Date.now()});},[saveSets]);
+  const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
+  const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
+  const changeTabOrder=useCallback(async o=>{setTabOrder(o);await saveSets({tabOrder:o});},[saveSets]);
+
+  const medTake=useCallback((dk,sid)=>{
+    // 服用時刻を保存しつつ、その時点の薬名を __names[sid] に焼き込む
+    const nx=JSON.parse(JSON.stringify(medR));
+    if(!nx[dk])nx[dk]={};
+    nx[dk][sid]=new Date().toISOString();
+    let names=[];
+    if(sid.startsWith("w:")){const wm=(medC.weeklyMeds||[]).find(w=>`w:${w.id}`===sid);if(wm)names=[wm.name];}
+    else{names=((medC.slots[sid]||{}).meds||[]).map(m=>m.name||m);}
+    if(names.length){if(!nx[dk].__names)nx[dk].__names={};nx[dk].__names[sid]=names;}
+    saveMed(nx);
+  },[medR,medC,saveMed]);
+  const medUpd=useCallback((dk,sid,val)=>{const nx=JSON.parse(JSON.stringify(medR));if(!nx[dk])nx[dk]={};if(sid==="prn"){if(val)nx[dk][sid]=val;else delete nx[dk][sid];}else nx[dk][sid]=hmIso(dk,val);if(!Object.keys(nx[dk]).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
+  const medRem=useCallback((dk,sid)=>{const nx=JSON.parse(JSON.stringify(medR));if(nx[dk]){delete nx[dk][sid];if(nx[dk].__names)delete nx[dk].__names[sid];if(nx[dk].__names&&!Object.keys(nx[dk].__names).length)delete nx[dk].__names;}if(!Object.keys(nx[dk]||{}).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
+  const prnAdd=useCallback((dk,preset)=>{const nx=JSON.parse(JSON.stringify(medR));if(!nx[dk])nx[dk]={};const list=Array.isArray(nx[dk].prnList)?nx[dk].prnList:[];list.push({id:uid(),name:preset.name,color:preset.color||"#d0d0d0",time:new Date().toISOString()});nx[dk].prnList=list;saveMed(nx);},[medR,saveMed]);
+  const prnTime=useCallback((dk,id,hm)=>{const nx=JSON.parse(JSON.stringify(medR));const list=(nx[dk]?.prnList||[]).map(e=>e.id===id?{...e,time:hmIso(dk,hm)}:e);nx[dk].prnList=list;saveMed(nx);},[medR,saveMed]);
+  const prnRemove=useCallback((dk,id)=>{const nx=JSON.parse(JSON.stringify(medR));const list=(nx[dk]?.prnList||[]).filter(e=>e.id!==id);if(list.length)nx[dk].prnList=list;else delete nx[dk].prnList;if(!Object.keys(nx[dk]||{}).length)delete nx[dk];saveMed(nx);},[medR,saveMed]);
+
+  const handleImport=useCallback(async data=>{
+    if(data.bath_r!==undefined){setBathR(data.bath_r||{});await dbSet(K.bath,data.bath_r||{});}
+    if(data.meal_r!==undefined){setMealR(data.meal_r||{});await dbSet(K.meal,data.meal_r||{});}
+    if(data.teeth_r!==undefined){setTeethR(data.teeth_r||{});await dbSet(K.teeth,data.teeth_r||{});}
+    if(data.teeth_c!==undefined){setTeethConf(data.teeth_c||defaultTeethConf());await dbSet(K.teethC,data.teeth_c||defaultTeethConf());}
+    if(data.memo_r!==undefined){setMemoR(data.memo_r||{});await dbSet(K.memo,data.memo_r||{});}
+    if(data.mood_r!==undefined){setMoodR(data.mood_r||{});await dbSet(K.mood,data.mood_r||{});}
+    if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
+    if(data.med_r!==undefined){setMedR(data.med_r||{});await dbSet(K.med,data.med_r||{});}
+    if(data.med_c!==undefined){let c=data.med_c||defaultMedConf();const df=defaultMedConf();c={...df,...c,slots:{...df.slots,...c.slots}};for(const sid of Object.keys(c.slots))c.slots[sid].meds=(c.slots[sid].meds||[]).map(normMed);setMedC(c);await dbSet(K.medC,c);}
+    // 復元直後はバックアップ催促を出さない（最終バックアップ日時を今に更新）
+    setBackupDue(false);await saveSets({lastBackup:Date.now()});
+  },[saveSets]);
+  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
+
+  if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
+
+  const mainTabs=tabOrder.filter(t=>!hiddenTabs.includes(t));
+  const isSecondary=SECONDARY_TABS.includes(tab);
+  const activeTab=([...mainTabs,...SECONDARY_TABS]).includes(tab)?tab:(mainTabs[0]||"settings");
+  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
+
+  // タイトルタップ：セカンダリタブからメインタブへ
+  const handleTitleTap=()=>{if(isSecondary){const t=mainTabs.find(t=>t===tab)||mainTabs[0]||DEFAULT_TAB_ORDER[0];changeTab(t);}};
+
+  return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:"max(env(safe-area-inset-top),24px)",paddingLeft:16,paddingRight:16,paddingBottom:56}}>
+      {/* ヘッダー */}
+      <div style={{width:"100%",maxWidth:380,marginBottom:14,display:"flex",alignItems:"flex-start",gap:8}}>
+        <div style={{flex:1,minWidth:0}}>
+          <h1 onClick={handleTitleTap}
+            style={{fontSize:17,fontWeight:700,letterSpacing:".05em",color:"rgba(0,0,0,0.65)",margin:"0 0 2px",cursor:isSecondary?"pointer":"default",userSelect:"none"}}>
+            ライフログ
+          </h1>
+          <p style={{fontSize:11,color:"rgba(0,0,0,0.33)"}}>{new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"long"})}</p>
+        </div>
+        {/* 右上：ホーム / 履歴 / 統計 / 設定 */}
+        <div style={{display:"flex",gap:4,paddingTop:3,flexShrink:0}}>
+          <button onClick={()=>changeTab(mainTabs[0]||DEFAULT_TAB_ORDER[0])} style={secTabS(!isSecondary)}>ホーム</button>
+          {SECONDARY_TABS.map(t=>(
+            <button key={t} onClick={()=>changeTab(t)} style={secTabS(activeTab===t)}>{TAB_LABELS[t]}</button>
+          ))}
+        </div>
+      </div>
+      {/* メインタブバー（セカンダリ表示中は非表示） */}
+      {!isSecondary&&(
+        <div className="scrolltab" style={{width:"100%",maxWidth:380,marginBottom:14}}>
+          {mainTabs.map(t=><button key={t} onClick={()=>changeTab(t)} style={tabBtnS(activeTab===t)}>{TAB_LABELS[t]}</button>)}
+        </div>
+      )}
+      {isSecondary&&<div style={{marginBottom:14}}/>}
+      {activeTab==="bath"     &&<BathTab     records={bathR}  onUpdate={saveBath} dateNav={dateNav}/>}
+      {activeTab==="med"      &&<MedTab      records={medR}   config={medC} onTake={medTake} onUpdate={medUpd} onRemove={medRem} onPrnAdd={prnAdd} onPrnTime={prnTime} onPrnRemove={prnRemove} dateNav={dateNav}/>}
+      {activeTab==="meal"     &&<MealTab     records={mealR}  onUpdate={saveMeal} dateNav={dateNav}/>}
+      {activeTab==="teeth"    &&<TeethTab    records={teethR} teethConf={teethConf} onUpdate={saveTeeth} dateNav={dateNav}/>}
+      {activeTab==="memo"     &&<MemoTab     records={memoR}  onUpdate={saveMemo} dateNav={dateNav}/>}
+      {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood} dateNav={dateNav}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
+      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {backupDue&&(
+        <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:9998,display:"flex",alignItems:"center",gap:10,
+          padding:"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
+          borderTop:"1px solid rgba(0,0,0,0.08)",boxShadow:"0 -2px 12px rgba(0,0,0,0.06)"}}>
+          <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>そろそろバックアップしませんか？</span>
+          <button onClick={()=>{changeTab("settings");setBackupDue(false);}}
+            style={{background:"rgba(0,0,0,0.09)",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,color:"rgba(0,0,0,0.65)",cursor:"pointer",fontFamily:"inherit"}}>設定を開く</button>
+          <button onClick={()=>setBackupDue(false)}
+            style={{background:"none",border:"none",color:"rgba(0,0,0,0.3)",fontSize:14,cursor:"pointer",padding:"4px",fontFamily:"inherit"}}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
+// ── Service Worker 登録 + 完全自動更新 ──
+if("serviceWorker" in navigator){
+  let refreshing=false;
+  // 新しいSWが制御を開始したら自動で1回リロード（＝即最新版に）
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{
+    if(refreshing)return;refreshing=true;location.reload();
+  });
+  navigator.serviceWorker.register("./sw.js").then(reg=>{
+    // 起動のたびに更新を確認
+    reg.update().catch(()=>{});
+    // 待機中の新SWがいれば即有効化（skipWaiting→controllerchange→reload）
+    if(reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+    reg.addEventListener("updatefound",()=>{
+      const nw=reg.installing;
+      if(!nw)return;
+      nw.addEventListener("statechange",()=>{
+        if(nw.state==="installed" && navigator.serviceWorker.controller){
+          // 新版インストール完了 → 即有効化
+          nw.postMessage("SKIP_WAITING");
+        }
       });
-    }).catch(function () {});
-    var refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", function () {
-      if (refreshing) return;
-      refreshing = true;
-      window.location.reload();
     });
-    document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState === "visible") {
-        navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {});
-      }
-    });
+  }).catch(()=>{});
+  // アプリが再び前面に来たときも更新チェック（バックグラウンド復帰時）
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible"){
+      navigator.serviceWorker.getRegistration().then(r=>r&&r.update().catch(()=>{}));
+    }
   });
 }
 </script>
