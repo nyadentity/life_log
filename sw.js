@@ -1,5 +1,5 @@
 // ライフログ Service Worker（毎回更新チェック方式）
-const APP_VERSION = "4.8";
+const APP_VERSION = "4.9";
 const CACHE = "lifelog-v" + APP_VERSION;
 const ASSETS = [
   "./",

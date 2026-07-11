@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "4.8";
+const APP_VERSION = "4.9";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -857,10 +857,8 @@ function MedTimingChart({records,config,month}) {
   const H=160,Y0=6,Y1=26,YR=Y1-Y0;
   // 系列を構築：各スロット + 曜日薬
   const aSlots=SLOT_DEFS.filter(s=>config.slots[s.id]?.enabled);
-  const series=[
-    ...aSlots.map(s=>({key:s.id,label:s.label,color:s.color,weekly:false})),
-    ...config.weeklyMeds.map(wm=>({key:`w:${wm.id}`,label:wm.name,color:WC,weekly:true,weekdays:wm.weekdays})),
-  ];
+  // 曜日限定の薬はグラフに表示しない（定時スロットのみ）
+  const series=aSlots.map(s=>({key:s.id,label:s.label,color:s.color,weekly:false}));
   // 各系列につき、日ごとの服用時刻（h）を集める
   const toH=iso=>{const t=new Date(iso);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;return (h>=Y0&&h<=Y1)?h:null;};
   const seriesData=series.map(s=>{
