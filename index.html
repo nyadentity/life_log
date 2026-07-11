@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "4.9";
+const APP_VERSION = "6.0";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -45,9 +45,11 @@ const CAT = {
   bath:  { color:"#b8d8f0", dim:"rgba(184,216,240,0.4)" },
   meal:  { color:"#b8dda0", dim:"rgba(184,221,160,0.4)" },
   teeth: { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
+  skin:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
   memo:  { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
   mood:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
 };
+const CARE_RATING_LABELS = ["✕","△","○","◎"];
 const MOOD_LABELS = ["最悪","悪い","ふつう","良い","最高"];
 const MOOD_COLORS = ["#f5c2c2","#fad9c0","#f5edc0","#d4ebc2","#b3d9ed"];
 const RATING_FIELDS = [
@@ -63,16 +65,15 @@ const MEAL_COLORS = {
   "その他": { color:"#cccccc", dim:"rgba(204,204,204,0.4)" }, // 旧記録用フォールバック（ボタンには出ない）
 };
 const MEAL_CATS = ["朝食","昼食","夕食","間食"];
-const FULLNESS_LABELS = ["少なめ","普通","多め","満腹","食べすぎ"];
 
 const SECONDARY_TABS = ["timeline","stats","settings"];
-const DEFAULT_TAB_ORDER = ["meal","med","bath","teeth","mood","memo"];
+const DEFAULT_TAB_ORDER = ["meal","med","care","mood"];
 const TAB_LABELS = {
-  bath:"入浴", med:"服薬", meal:"食事", teeth:"歯磨き", mood:"気分", memo:"行動",
+  care:"ケア", med:"服薬", meal:"食事", mood:"日記",
   timeline:"履歴", stats:"統計", settings:"設定"
 };
 const DB_NAME = "daily-log";
-const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
+const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", skin:"skin_r", care:"care_r", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
 
 // ── IndexedDB ──────────────────────────────────────────────
 let _db = null;
@@ -269,38 +270,88 @@ function useDateNav(realToday) {
 }
 
 // ── 入浴タブ ──────────────────────────────────────────────
-function BathTab({records,onUpdate,dateNav}) {
+// ── 清潔タブ（入浴・歯磨き・スキンケア）───────────────────
+// 記録: careR = {date:{bath:{r:1-4,memo:""},teeth:{...},skin:{...}}}
+// 旧形式（数値1-3）は読み込み時に正規化: 1=できなかった, 2→3=できた, 3→4=よくできた
+function normCare(v){
+  if(v==null)return{};
+  if(typeof v==="number")return{r:v===1?1:v+1};
+  return v;
+}
+// 評価記号（✕△○◎）を同じ線幅のSVGで描画
+function CareMark({n,on}) {
+  const sw=1;
+  const common={fill:"none",stroke:"#000",strokeWidth:sw,strokeLinecap:"round",strokeLinejoin:"round"};
+  return(
+    <svg width="15" height="15" viewBox="0 0 16 16" style={{display:"block",opacity:on?0.6:0.3}}>
+      {n===1&&<>
+        <line x1="4.2" y1="4.2" x2="11.8" y2="11.8" {...common}/>
+        <line x1="11.8" y1="4.2" x2="4.2" y2="11.8" {...common}/>
+      </>}
+      {n===2&&<polygon points="8,3.4 13,12.4 3,12.4" {...common}/>}
+      {n===3&&<circle cx="8" cy="8" r="4.9" {...common}/>}
+      {n===4&&<>
+        <circle cx="8" cy="8" r="5.4" {...common}/>
+        <circle cx="8" cy="8" r="2.5" {...common}/>
+      </>}
+    </svg>
+  );
+}
+function CareTab({careR,onCare,dateNav}) {
   const realToday=todayKey();
   const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
-  const entries=records[curDate]||[];
-  const add=()=>onUpdate({...records,[curDate]:[...entries,{id:uid(),time:new Date().toISOString(),memo:""}]});
-  const updT=(id,hm)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
-  const updM=(id,memo)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,memo}:e)});
-  const rem=id=>{const a=entries.filter(e=>e.id!==id),nx={...records};if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
+  const cats=[
+    {key:"bath", label:"入浴",       color:CAT.bath.color},
+    {key:"teeth",label:"歯磨き",     color:CAT.teeth.color},
+    {key:"skin", label:"スキンケア", color:CAT.skin.color},
+  ];
+  const day=careR[curDate]||{};
+  const patchCat=(key,p)=>{
+    const nx=JSON.parse(JSON.stringify(careR));
+    const cur=normCare((nx[curDate]||{})[key]);
+    const next={...cur,...p};
+    if(!nx[curDate])nx[curDate]={};
+    const empty=next.r==null&&!(next.memo||"").trim();
+    if(empty)delete nx[curDate][key];else nx[curDate][key]=next;
+    if(!Object.keys(nx[curDate]).length)delete nx[curDate];
+    onCare(nx);
+  };
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
-      {entries.map(e=>(
-        <div key={e.id} style={card}>
-          <div style={{padding:"12px 16px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
-              <div style={{width:4,height:20,borderRadius:2,background:CAT.bath.color,flexShrink:0}}/>
-              <TimeCell iso={e.time} color={CAT.bath.color} dim={CAT.bath.dim} onUpdate={hm=>updT(e.id,hm)} onRemove={()=>rem(e.id)}/>
+      {cats.map(cat=>{
+        const rec=normCare(day[cat.key]);
+        const rating=rec.r??null;
+        const active=rating!=null||(rec.memo||"").trim();
+        return(
+          <div key={cat.key} style={card}><div style={{padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+              <div style={{width:4,height:20,borderRadius:2,background:active?cat.color:"rgba(0,0,0,0.08)",flexShrink:0}}/>
+              <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)",flex:1}}>{cat.label}</span>
             </div>
-            <BathMemo key={e.id+curDate} memo={e.memo} onChange={m=>updM(e.id,m)}/>
-          </div>
-        </div>
-      ))}
-      <button onClick={add} style={addBtn}>＋ 入浴を記録</button>
+            <div style={{display:"flex",gap:4}}>
+              {CARE_RATING_LABELS.map((lb,i)=>{const n=i+1;const on=rating===n;return(
+                <button key={n} onClick={()=>patchCat(cat.key,{r:on?null:n})} aria-label={lb}
+                  style={{flex:1,padding:"7px 0",border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    background:on?cat.color:"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                  <CareMark n={n} on={on}/>
+                </button>
+              );})}
+            </div>
+            <CareMemo key={cat.key+curDate} memo={rec.memo} onChange={m=>patchCat(cat.key,{memo:m})}/>
+          </div></div>
+        );
+      })}
     </div>
   );
 }
-function BathMemo({memo,onChange}) {
+function CareMemo({memo,onChange}) {
   const ref=useAutoGrow([memo]);
   return(
     <textarea ref={ref} defaultValue={memo||""} rows={1} placeholder="メモ（任意）"
       onInput={e=>fitTextarea(e.target)} onBlur={e=>onChange(e.target.value)}
-      style={{width:"100%",border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.55)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",padding:"2px 0 0 16px",overflow:"hidden"}}/>
+      style={{width:"100%",border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.55)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",padding:"8px 0 0 16px",overflow:"hidden"}}/>
   );
 }
 
@@ -455,7 +506,6 @@ function MealTab({records,onUpdate,dateNav}) {
               </div>
               <div style={{display:"flex",gap:6,paddingLeft:16,flexWrap:"wrap",alignItems:"center"}}>
                 {e.calories!=null&&<span style={{fontSize:11,fontWeight:600,color:"rgba(0,0,0,0.5)",background:c.dim,borderRadius:8,padding:"3px 8px"}}>{e.calories} kcal</span>}
-                {e.fullness!=null&&<span style={{fontSize:11,color:"rgba(0,0,0,0.4)",background:"rgba(0,0,0,0.04)",borderRadius:8,padding:"3px 8px"}}>{FULLNESS_LABELS[e.fullness-1]}</span>}
                 {e.memo&&<span style={{fontSize:11,color:"rgba(0,0,0,0.4)",lineHeight:1.5}}>{e.memo}</span>}
               </div>
             </div>
@@ -468,13 +518,12 @@ function MealTab({records,onUpdate,dateNav}) {
 }
 function MealForm({initial,onSave,onCancel,onDelete,submitLabel="記録"}) {
   const[cat,setCat]=useState(initial?.category||"朝食");
-  const[fullness,setFullness]=useState(initial?.fullness??null);
   const calRef=useRef(null),memoRef=useRef(null);
   useEffect(()=>{fitTextarea(memoRef.current);},[]);
   const mc=MEAL_COLORS[cat]||MEAL_COLORS["その他"];
   const save=()=>{
     const cal=calRef.current?.value?parseInt(calRef.current.value):null;
-    onSave({category:cat,calories:cal||null,fullness,memo:memoRef.current?.value||"",
+    onSave({category:cat,calories:cal||null,memo:memoRef.current?.value||"",
       ...(initial?{}:{id:uid(),time:new Date().toISOString()})});
   };
   return(
@@ -485,11 +534,6 @@ function MealForm({initial,onSave,onCancel,onDelete,submitLabel="記録"}) {
       <div style={{marginBottom:12}}>
         <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:4}}>カロリー（任意）</p>
         <div style={{display:"flex",alignItems:"center",gap:4}}><input ref={calRef} type="number" min="0" max="9999" placeholder="0" defaultValue={initial?.calories??""} style={{...inp,width:72,flex:"none"}}/><span style={{fontSize:11,color:"rgba(0,0,0,0.35)"}}>kcal</span></div>
-      </div>
-      <div style={{marginBottom:12}}>
-        <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:6}}>体感の量（任意）</p>
-        <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>setFullness(fullness===n?null:n)} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:fullness===n?mc.color:"rgba(0,0,0,0.06)",color:fullness===n?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>{n}</button>)}</div>
-        {fullness&&<p style={{fontSize:10,color:"rgba(0,0,0,0.35)",marginTop:4,textAlign:"center"}}>{FULLNESS_LABELS[fullness-1]}</p>}
       </div>
       <textarea ref={memoRef} rows={1} placeholder="メモ（任意）" defaultValue={initial?.memo||""} onInput={e=>fitTextarea(e.target)} style={{...inp,resize:"none",lineHeight:1.6,marginBottom:12,overflow:"hidden"}}/>
       <div style={{display:"flex",gap:8}}>
@@ -502,44 +546,8 @@ function MealForm({initial,onSave,onCancel,onDelete,submitLabel="記録"}) {
 }
 
 // ── 歯磨きタブ ─────────────────────────────────────────────
-function TeethTab({records,teethConf,onUpdate,dateNav}) {
-  const realToday=todayKey();
-  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
-  const dayEntries=Array.isArray(records[curDate])?records[curDate]:[];
-  const items=teethConf?.items||[];
-  const addRecord=item=>onUpdate({...records,[curDate]:[...dayEntries,{id:uid(),itemId:item.id,itemName:item.name,time:new Date().toISOString()}]});
-  const remRecord=id=>{const nx={...records},a=dayEntries.filter(e=>e.id!==id);if(a.length)nx[curDate]=a;else delete nx[curDate];onUpdate(nx);};
-  const updTime=(id,hm)=>onUpdate({...records,[curDate]:dayEntries.map(e=>e.id===id?{...e,time:hmIso(curDate,hm)}:e)});
-  if(!items.length) return(<div style={{width:"100%",maxWidth:380}}><DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/><p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:40}}>設定からアイテムを追加してください</p></div>);
-  return(
-    <div style={{width:"100%",maxWidth:380}}>
-      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
-      {items.map(item=>{
-        const ir=dayEntries.filter(e=>e.itemId===item.id);
-        const col=item.color||CAT.teeth.color, dim=hexA(col,0.4);
-        return(
-          <div key={item.id} style={card}><div style={{padding:"12px 16px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:ir.length?8:0}}>
-              <div style={{width:4,borderRadius:2,background:ir.length?col:"rgba(0,0,0,0.08)",flexShrink:0,height:20}}/>
-              <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)",flex:1}}>{item.name}</span>
-              <button onClick={()=>addRecord(item)} style={{background:col,border:"none",borderRadius:20,padding:"6px 16px",fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.5)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>みがいた</button>
-            </div>
-            {ir.map(r=>(
-              <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,paddingLeft:16,marginTop:4}}>
-                <TimeCell iso={r.time} color={col} dim={dim} onUpdate={hm=>updTime(r.id,hm)} onRemove={()=>remRecord(r.id)}/>
-              </div>
-            ))}
-          </div></div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── 行動メモタブ ──────────────────────────────────────────
-function MemoTab({records,onUpdate,dateNav}) {
-  const realToday=todayKey();
-  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+function MemoSection({records,onUpdate,curDate}) {
   const[text,setText]=useState("");
   const inputRef=useRef(null);
   const entries=records[curDate]||[];
@@ -549,8 +557,7 @@ function MemoTab({records,onUpdate,dateNav}) {
   const updTxt=(id,txt)=>onUpdate({...records,[curDate]:entries.map(e=>e.id===id?{...e,text:txt}:e)});
   const sorted=[...entries].sort((a,b)=>b.time.localeCompare(a.time));
   return(
-    <div style={{width:"100%",maxWidth:380}}>
-      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+    <div>
       <div style={card}><div style={{padding:"12px 16px"}}>
         <textarea ref={inputRef} value={text} onChange={e=>{setText(e.target.value);fitTextarea(e.target);}}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();add();}}}
@@ -628,7 +635,7 @@ function RatingCard({field,value,onChange}) {
     </div>
   );
 }
-function MoodTab({records,tagConf,onUpdate,dateNav}) {
+function MoodTab({records,tagConf,onUpdate,memoR,onMemoUpdate,dateNav}) {
   const realToday=todayKey();
   const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
   const rec=records[curDate]||{};
@@ -666,6 +673,22 @@ function MoodTab({records,tagConf,onUpdate,dateNav}) {
         </div>
       </div></div>
 
+      {/* 体調・睡眠（気分と同形式・直接選択） */}
+      {RATING_FIELDS.map(f=>(
+        <div key={f.key} style={card}><div style={{padding:"14px 16px"}}>
+          <p style={{...secLbl,margin:"0 0 10px"}}>{f.label}</p>
+          <div style={{display:"flex",gap:4}}>
+            {RATING_LABELS.map((lb,i)=>{const n=i+1;const on=rec[f.key]===n;return(
+              <button key={n} onClick={()=>patch({[f.key]:on?null:n})}
+                style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                  background:on?MOOD_COLORS[i]:"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                {lb}
+              </button>
+            );})}
+          </div>
+        </div></div>
+      ))}
+
       {/* 出来事タグ */}
       <div style={card}><div style={{padding:"14px 16px"}}>
         <p style={{...secLbl,margin:"0 0 10px"}}>出来事タグ</p>
@@ -688,10 +711,6 @@ function MoodTab({records,tagConf,onUpdate,dateNav}) {
         <DiaryField key={curDate} value={rec.diary||""} onChange={v=>patch({diary:v})}/>
       </div></div>
 
-      {/* 体調・睡眠 */}
-      {RATING_FIELDS.map(f=>(
-        <RatingCard key={f.key} field={f} value={rec[f.key]??null} onChange={v=>patch({[f.key]:v})}/>
-      ))}
     </div>
   );
 }
@@ -705,7 +724,7 @@ function DiaryField({value,onChange}) {
 }
 
 // ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
-function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethConf}) {
+function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,tagConf,teethConf}) {
   const[search,setSearch]=useState("");
   const q=search.trim().toLowerCase();
   const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
@@ -751,9 +770,22 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethC
         const aS=SLOT_DEFS.filter(s=>medConf.slots[s.id]?.enabled);
         const dW=medConf.weeklyMeds.filter(wm=>wm.weekdays.includes(wd));
         const memoItems=memo.map(e=>({t:e.time,label:"メモ",color:CAT.memo.color,sub:e.text})).filter(matchQ).sort(sortT);
-        const bathItems=bath.map(e=>({t:e.time,label:"入浴",color:CAT.bath.color,sub:e.memo})).filter(matchQ).sort(sortT);
-        const teethItems=(Array.isArray(teeth)?teeth:[]).map(e=>{const it=(teethConf?.items||[]).find(x=>x.id===e.itemId);return{t:e.time,label:e.itemName||"歯磨き",color:(it&&it.color)||CAT.teeth.color,sub:""};}).filter(matchQ).sort(sortT);
-        const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.fullness?FULLNESS_LABELS[e.fullness-1]:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
+        const careRating=careR?.[ds]||{};
+        const rl=k=>{const o=normCare(careRating[k]);const parts=[o.r?CARE_RATING_LABELS[o.r-1]:null,(o.memo||"").trim()||null].filter(Boolean);return parts.length?parts.join(" "):null;};
+        const bathItems=[
+          ...bath.map(e=>({t:e.time,label:"入浴",color:CAT.bath.color,sub:e.memo})),
+          ...(rl("bath")?[{t:null,label:"入浴",color:CAT.bath.color,sub:rl("bath")}]:[]),
+        ].filter(matchQ).sort(sortT);
+        const teethItems=[
+          ...(Array.isArray(teeth)?teeth:[]).map(e=>{const it=(teethConf?.items||[]).find(x=>x.id===e.itemId);return{t:e.time,label:e.itemName||"歯磨き",color:(it&&it.color)||CAT.teeth.color,sub:""};}),
+          ...(rl("teeth")?[{t:null,label:"歯磨き",color:CAT.teeth.color,sub:rl("teeth")}]:[]),
+        ].filter(matchQ).sort(sortT);
+        const skin=(skinR?.[ds])||[];
+        const skinItems=[
+          ...(Array.isArray(skin)?skin:[]).map(e=>({t:e.time,label:"スキンケア",color:CAT.skin.color,sub:""})),
+          ...(rl("skin")?[{t:null,label:"スキンケア",color:CAT.skin.color,sub:rl("skin")}]:[]),
+        ].filter(matchQ).sort(sortT);
+        const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
         const medItems=[];
         aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
         dW.forEach(wm=>{const k=`w:${wm.id}`;if(med[k])medItems.push({t:med[k],label:(med.__names&&med.__names[k]?med.__names[k][0]:wm.name),color:WC,sub:""});});
@@ -771,7 +803,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethC
           if(mood.sleep!=null)moodItems.push({t:null,label:"睡眠",color:"#ddd2f0",sub:RATING_LABELS[mood.sleep-1]});
         }
         const filteredMood=moodItems.filter(matchQ);
-        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
+        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"skin",items:skinItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
         if(!groups.length)return null;
         return(
           <div key={ds} style={card}><div style={{padding:"12px 16px"}}>
@@ -805,7 +837,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,memoR,moodR,tagConf,teethC
 }
 
 // ── 統計：カレンダー ──────────────────────────────────────
-function MonthCalendar({month,bathR,teethR}) {
+function MonthCalendar({month,bathR,teethR,skinR,careR}) {
   const[y,m]=month.split("-");
   const fd=new Date(+y,+m-1,1).getDay();
   const dim=dimY(y,m);
@@ -824,8 +856,11 @@ function MonthCalendar({month,bathR,teethR}) {
         {cells.map((day,i)=>{
           if(!day)return<div key={i} style={{height:28}}/>;
           const ds=padDate(y,+m,day);
-          const bath=bathR[ds]?.length>0;
-          const teeth=Array.isArray(teethR[ds])&&teethR[ds].length>0;
+          const cd_=careR?.[ds]||{};
+          const done=k=>{const o=normCare(cd_[k]);return o.r!=null&&o.r>=2;};
+          const bath=bathR[ds]?.length>0||done("bath");
+          const teeth=(Array.isArray(teethR[ds])&&teethR[ds].length>0)||done("teeth");
+          const skin=(Array.isArray(skinR?.[ds])&&skinR[ds].length>0)||done("skin");
           const isToday=ds===today,isFuture=ds>today;
           const dow=(fd+day-1)%7;
           return(
@@ -833,10 +868,11 @@ function MonthCalendar({month,bathR,teethR}) {
               <div style={{width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",flexShrink:0,background:"transparent"}}>
                 <span style={{fontSize:10,lineHeight:1,fontWeight:isToday?700:400,color:isFuture?"rgba(0,0,0,0.15)":dow===0?"rgba(200,50,50,0.55)":dow===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.55)"}}>{day}</span>
               </div>
-              {!isFuture&&(bath||teeth)&&(
+              {!isFuture&&(bath||teeth||skin)&&(
                 <div style={{display:"flex",gap:2,marginTop:1}}>
                   {bath&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.bath.color}}/>}
                   {teeth&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.teeth.color}}/>}
+                  {skin&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.skin.color}}/>}
                 </div>
               )}
             </div>
@@ -846,6 +882,7 @@ function MonthCalendar({month,bathR,teethR}) {
       <div style={{display:"flex",gap:12,marginTop:8}}>
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.bath.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>入浴</span></div>
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.teeth.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>歯磨き</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.skin.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>スキンケア</span></div>
       </div>
     </div>
   );
@@ -935,7 +972,7 @@ function DailyCalChart({records,month}) {
 }
 
 // ── 統計タブ ──────────────────────────────────────────────
-function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
+function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,moodR}) {
   const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
   const prev=()=>setMonth(addMonths(month,-1));
   const next=()=>{const n=addMonths(month,1);if(n<=curMonth)setMonth(n);};
@@ -943,9 +980,9 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
     <div style={{width:"100%",maxWidth:380}}>
       <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next} onPick={setMonth}/>
       <p style={secLbl}>受診用サマリー</p>
-      <div style={card}><div style={{padding:"14px 16px"}}><ClinicSummary month={month} medR={medR} medConf={medConf} moodR={moodR} bathR={bathR} mealR={mealR}/></div></div>
-      <p style={{...secLbl,marginTop:8}}>入浴・歯磨き</p>
-      <div style={card}><div style={{padding:"12px 16px"}}><MonthCalendar month={month} bathR={bathR} teethR={teethR}/></div></div>
+      <div style={card}><div style={{padding:"14px 16px"}}><ClinicSummary month={month} medR={medR} medConf={medConf} moodR={moodR} bathR={bathR} teethR={teethR} skinR={skinR} careR={careR} mealR={mealR}/></div></div>
+      <p style={{...secLbl,marginTop:8}}>ケア</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><MonthCalendar month={month} bathR={bathR} teethR={teethR} skinR={skinR} careR={careR}/></div></div>
       <p style={{...secLbl,marginTop:8}}>服薬の時間帯</p>
       <div style={card}><div style={{padding:"12px 16px"}}><MedTimingChart records={medR} config={medConf} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
@@ -959,7 +996,7 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,moodR}) {
 
 
 // ── 統計：受診用サマリー ──────────────────────────────────
-function ClinicSummary({month,medR,medConf,moodR,bathR,mealR}) {
+function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}) {
   const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
   // 対象日数（未来は除く）
   let daysInScope=0;
@@ -1027,19 +1064,29 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,mealR}) {
         ))}
       </>}
       {(()=>{
-        // ── 生活：入浴回数・平均カロリー ──
-        let bathCount=0;
+        // ── 生活：入浴・歯磨き・スキンケアの実施日数、平均カロリー ──
+        // 実施日 = 旧形式の打刻がある日、または清潔タブの評価が「すこしできた」以上の日
+        const doneDay=(ds,legacy,key)=>{
+          if(Array.isArray(legacy?.[ds])&&legacy[ds].length>0)return true;
+          const o=normCare(careR?.[ds]?.[key]);
+          return o.r!=null&&o.r>=2;
+        };
+        let bathDays=0,teethDays=0,skinDays=0;
         let calSum=0,calDays=0;
         for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
-          bathCount+=(Array.isArray(bathR?.[ds])?bathR[ds].length:0);
+          if(doneDay(ds,bathR,"bath"))bathDays++;
+          if(doneDay(ds,teethR,"teeth"))teethDays++;
+          if(doneDay(ds,skinR,"skin"))skinDays++;
           const meals=Array.isArray(mealR?.[ds])?mealR[ds]:[];
           const dayCal=meals.reduce((s,e)=>s+(e.calories||0),0);
           if(dayCal>0){calSum+=dayCal;calDays++;}
         }
-        if(bathCount===0&&calDays===0)return null;
+        if(bathDays===0&&teethDays===0&&skinDays===0&&calDays===0)return null;
         return(<>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>生活</p>
-          {bathCount>0&&<Row label="入浴" color={CAT.bath.color} right={`${bathCount}回`}/>}
+          {bathDays>0&&<Row label="入浴" color={CAT.bath.color} right={`${bathDays}日`}/>}
+          {teethDays>0&&<Row label="歯磨き" color={CAT.teeth.color} right={`${teethDays}日`}/>}
+          {skinDays>0&&<Row label="スキンケア" color={CAT.skin.color} right={`${skinDays}日`}/>}
           {calDays>0&&<Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>}
         </>);
       })()}
@@ -1058,8 +1105,9 @@ function MoodCombinedChart({records,month}) {
     { key:"condition", label:"体調", color:"#a8c8e8",       get:r=>r.condition??null },
     { key:"sleep",     label:"睡眠", color:"#c8b8e8",       get:r=>r.sleep??null },
   ];
-  // 表示モード：気分/体調/睡眠の単独 or "all"（比較）
-  const[mode,setMode]=useState("all");
+  // 表示切替：押したボタンの系列が表示される（複数同時OK）
+  const[vis,setVis]=useState({mood:true,condition:true,sleep:true});
+  const toggleVis=k=>setVis(v=>({...v,[k]:!v[k]}));
   const levels=5;
   const[y,m]=month.split("-");const dim=dimY(y,m);const N=dim;
   const xLabels=["1日",`${Math.round(dim/2)}日`,`${dim}日`];
@@ -1081,26 +1129,20 @@ function MoodCombinedChart({records,month}) {
     flush();return paths;
   };
   const lineD=pp=>pp.map((p,idx)=>`${idx?"L":"M"} ${p.x} ${p.y}`).join(" ");
-  const visible=mode==="all"?seriesData:seriesData.filter(s=>s.key===mode);
+  const visible=seriesData.filter(s=>vis[s.key]);
 
   return(
     <div>
-      {/* モード切替：単独 ＋ 比較 */}
+      {/* 表示切替：押したボタンの系列を表示（複数同時OK） */}
       <div style={{display:"flex",gap:6,marginBottom:10,justifyContent:"center",flexWrap:"wrap"}}>
-        {SERIES.map(s=>{const on=mode===s.key;return(
-          <button key={s.key} onClick={()=>setMode(s.key)}
+        {SERIES.map(s=>{const on=vis[s.key];return(
+          <button key={s.key} onClick={()=>toggleVis(s.key)}
             style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
-              background:on?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
+              background:on?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px",opacity:on?1:0.55}}>
             <div style={{width:14,height:3,borderRadius:2,background:s.color}}/>
             <span style={{fontSize:10,fontWeight:600,color:on?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>{s.label}</span>
           </button>
         );})}
-        <button onClick={()=>setMode("all")}
-          style={{display:"flex",alignItems:"center",gap:5,border:"none",cursor:"pointer",fontFamily:"inherit",
-            background:mode==="all"?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",borderRadius:14,padding:"5px 11px"}}>
-          <div style={{width:14,height:3,borderRadius:2,background:"#c8c8c8"}}/>
-          <span style={{fontSize:10,fontWeight:600,color:mode==="all"?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>比較</span>
-        </button>
       </div>
       {!has
         ?<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>
@@ -1114,12 +1156,12 @@ function MoodCombinedChart({records,month}) {
             {[1,2,3,4,5].map(v=><div key={v} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
             <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
               {visible.map(s=>polySegs(s).map((pp,idx)=>(
-                <path key={s.key+"-"+idx} d={lineD(pp)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+                <path key={s.key+"-"+idx} d={lineD(pp)} fill="none" stroke={s.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
               )))}
             </svg>
             {/* 日付ごとの点（SVG外のdivで真円を保つ） */}
             {visible.map(s=>s.pts.filter(p=>p.v!=null&&!p.future).map(p=>(
-              <div key={s.key+"-pt-"+p.i} style={{position:"absolute",left:`${xOf(p.i)}%`,top:yOf(p.v),width:5,height:5,borderRadius:"50%",background:s.color,transform:"translate(-50%,-50%)"}}/>
+              <div key={s.key+"-pt-"+p.i} style={{position:"absolute",left:`${xOf(p.i)}%`,top:yOf(p.v),width:4,height:4,borderRadius:"50%",background:s.color,transform:"translate(-50%,-50%)"}}/>
             )))}
             <span style={{position:"absolute",bottom:-14,left:0,fontSize:8,color:"rgba(0,0,0,0.25)"}}>{xLabels[0]}</span>
             <span style={{position:"absolute",bottom:-14,left:"50%",fontSize:8,color:"rgba(0,0,0,0.25)",transform:"translateX(-50%)"}}>{xLabels[1]}</span>
@@ -1248,58 +1290,6 @@ function ColorPicker({value,onPick}) {
     </div>
   );
 }
-function TeethSettingsSection({conf,onConfChange}) {
-  const[newName,setNewName]=useState("");
-  const[editId,setEditId]=useState(null);
-  const[editColor,setEditColor]=useState(null);
-  const editRef=useRef(null);
-  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
-  const items=conf?.items||[];
-  const colOf=item=>item.color||CAT.teeth.color;
-  const openEdit=item=>{setEditId(item.id);setEditColor(colOf(item));};
-  const add=()=>{const n=newName.trim();if(!n)return;onConfChange({...conf,items:[...items,{id:uid(),name:n,color:"#dddddd"}]});setNewName("");};
-  const rem=id=>{onConfChange({...conf,items:items.filter(i=>i.id!==id)});setEditId(null);};
-  const saveEdit=id=>{const n=(editRef.current?.value||"").trim();onConfChange({...conf,items:items.map(i=>i.id===id?{...i,...(n?{name:n}:{}),color:editColor||colOf(i)}:i)});setEditId(null);};
-  const mv=(id,dir)=>{const i=items.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=items.length)return;const a=[...items];[a[i],a[j]]=[a[j],a[i]];onConfChange({...conf,items:a});};
-  return(<>
-    {items.map((item,idx)=>(
-      <div key={item.id} style={{...card,marginBottom:6}}>
-        {editId===item.id?(
-          <div style={{padding:"12px 16px"}}>
-            <input ref={editRef} type="text" defaultValue={item.name}
-              onKeyDown={e=>{if(e.key==="Enter")saveEdit(item.id);}}
-              style={{...inp,marginBottom:12}}/>
-            <ColorPicker value={editColor} onPick={setEditColor}/>
-            <div style={{display:"flex",gap:8,marginBottom:8}}>
-              <button onClick={()=>mv(item.id,-1)} disabled={idx===0} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===0?0.4:1}}>上へ</button>
-              <button onClick={()=>mv(item.id,1)} disabled={idx===items.length-1} style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===items.length-1?0.4:1}}>下へ</button>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button onMouseDown={e=>e.preventDefault()} onClick={()=>rem(item.id)} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
-              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
-              <button onMouseDown={e=>{e.preventDefault();saveEdit(item.id);}} style={{...smBtn(editColor||CAT.teeth.color),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
-            </div>
-          </div>
-        ):(
-          <div style={{display:"flex",alignItems:"center",padding:"12px 16px",gap:10}}>
-            <div style={{width:4,height:20,borderRadius:2,background:colOf(item),flexShrink:0}}/>
-            <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{item.name}</span>
-            <button onClick={()=>openEdit(item)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
-          </div>
-        )}
-      </div>
-    ))}
-    <div style={card}><div style={{padding:"10px 16px",display:"flex",gap:8,alignItems:"center"}}>
-      <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}}
-        placeholder="アイテム名（例：電動歯ブラシ、フロス）"
-        style={{flex:1,border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.65)",outline:"none"}}/>
-      <button onClick={add} style={smBtn("#dddddd")}>追加</button>
-    </div></div>
-  </>);
-}
-
-
-// ── 出来事タグ設定 ──────────────────────────────────────
 function TagSettingsSection({conf,onConfChange}) {
   const TAG_DEF="#dddddd";
   const[newName,setNewName]=useState("");
@@ -1403,7 +1393,7 @@ function PrnSettingsSection({config,onConfigChange}) {
 }
 
 // ── 設定タブ ──────────────────────────────────────────────
-function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,teethConf,onTeethConfChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
   const[confirmDel,setConfirmDel]=useState(false);
   const[tabEditId,setTabEditId]=useState(null);
   const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
@@ -1435,8 +1425,6 @@ function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medCon
       );})}
       <p style={{...secLbl,marginTop:12}}>出来事タグ</p>
       <TagSettingsSection conf={tagConf} onConfChange={onTagConfChange}/>
-      <p style={{...secLbl,marginTop:12}}>歯磨きアイテム</p>
-      <TeethSettingsSection conf={teethConf} onConfChange={onTeethConfChange}/>
       <p style={{...secLbl,marginTop:12}}>服薬設定</p>
       <MedSettingsSection config={medConfig} onConfigChange={onMedConfigChange}/>
       <p style={{...secLbl,marginTop:12}}>頓服プリセット</p>
@@ -1465,6 +1453,8 @@ function App() {
   const[medC,     setMedC]     =useState(defaultMedConf);
   const[mealR,    setMealR]    =useState({});
   const[teethR,   setTeethR]   =useState({});
+  const[skinR,    setSkinR]    =useState({});
+  const[careR,    setCareR]    =useState({});
   const[teethConf,setTeethConf]=useState(defaultTeethConf);
   const[memoR,    setMemoR]    =useState({});
   const[moodR,    setMoodR]    =useState({});
@@ -1480,26 +1470,32 @@ function App() {
   useEffect(()=>{
     (async()=>{
       await migrateMed();
-      const[br,mr,mc,mlr,tr,tc,mmr,mdr,tgc,as_]=await Promise.all([
+      const[br,mr,mc,mlr,tr,tc,skr,cr,mmr,mdr,tgc,as_]=await Promise.all([
         dbGet(K.bath),dbGet(K.med),dbGet(K.medC),
-        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.memo),
+        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.skin),dbGet(K.care),dbGet(K.memo),
         dbGet(K.mood),dbGet(K.tagC),dbGet(K.set),
       ]);
       let conf=mc||defaultMedConf();const def=defaultMedConf();
       conf={...def,...conf,slots:{...def.slots,...conf.slots}};
       for(const sid of Object.keys(conf.slots))conf.slots[sid].meds=(conf.slots[sid].meds||[]).map(normMed);
-      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setMemoR(mmr||{});setMoodR(mdr||{});
+      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setSkinR(skr||{});setCareR(cr||{});setMemoR(mmr||{});setMoodR(mdr||{});
       if(tc)setTeethConf(tc);
       if(tgc)setTagConf(tgc);
-      if(as_?.tabOrder){const p=as_.tabOrder.filter(t=>!SECONDARY_TABS.includes(t));const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));const merged=[...p,...missing];if(merged.length)setTabOrder(merged);}
-      if(as_?.hiddenTabs)setHiddenTabs(as_.hiddenTabs.filter(t=>!SECONDARY_TABS.includes(t)));
-      if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab))setTab(as_.lastTab);
+      // 旧タブ名の移行: bath/teeth→care, memo→mood
+      const migTab=t=>t==="bath"||t==="teeth"?"care":(t==="memo"?"mood":t);
+      if(as_?.tabOrder){
+        const p=[...new Set(as_.tabOrder.map(migTab))].filter(t=>DEFAULT_TAB_ORDER.includes(t));
+        const missing=DEFAULT_TAB_ORDER.filter(t=>!p.includes(t));
+        const merged=[...p,...missing];if(merged.length)setTabOrder(merged);
+      }
+      if(as_?.hiddenTabs)setHiddenTabs([...new Set(as_.hiddenTabs.map(migTab))].filter(t=>DEFAULT_TAB_ORDER.includes(t)));
+      if(as_?.lastTab&&!SECONDARY_TABS.includes(as_.lastTab)){const lt=migTab(as_.lastTab);if(DEFAULT_TAB_ORDER.includes(lt))setTab(lt);}
       // バックアップ催促：最後のバックアップから7日以上経過、または一度もしていない
       const hasData=Object.keys(br||{}).length||Object.keys(mr||{}).length||Object.keys(mlr||{}).length||Object.keys(tr||{}).length||Object.keys(mmr||{}).length||Object.keys(mdr||{}).length;
       const lb=as_?.lastBackup;
       if(hasData&&(!lb||(Date.now()-lb)>604800000))setBackupDue(true);
       setLoaded(true);
-    })();
+    })().catch(e=>{console.error('load error:',e);setLoaded(true);});
   },[]);
 
   const saveBath  =useCallback(async nx=>{setBathR(nx);await dbSet(K.bath,nx);},[]);
@@ -1508,6 +1504,8 @@ function App() {
   const saveMeal  =useCallback(async nx=>{setMealR(nx);await dbSet(K.meal,nx);},[]);
   const saveTeeth =useCallback(async nx=>{setTeethR(nx);await dbSet(K.teeth,nx);},[]);
   const saveTeethC=useCallback(async nx=>{setTeethConf(nx);await dbSet(K.teethC,nx);},[]);
+  const saveSkin  =useCallback(async nx=>{setSkinR(nx);await dbSet(K.skin,nx);},[]);
+  const saveCare  =useCallback(async nx=>{setCareR(nx);await dbSet(K.care,nx);},[]);
   const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
   const saveMood  =useCallback(async nx=>{setMoodR(nx);await dbSet(K.mood,nx);},[]);
   const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
@@ -1540,6 +1538,8 @@ function App() {
     if(data.meal_r!==undefined){setMealR(data.meal_r||{});await dbSet(K.meal,data.meal_r||{});}
     if(data.teeth_r!==undefined){setTeethR(data.teeth_r||{});await dbSet(K.teeth,data.teeth_r||{});}
     if(data.teeth_c!==undefined){setTeethConf(data.teeth_c||defaultTeethConf());await dbSet(K.teethC,data.teeth_c||defaultTeethConf());}
+    if(data.skin_r!==undefined){setSkinR(data.skin_r||{});await dbSet(K.skin,data.skin_r||{});}
+    if(data.care_r!==undefined){setCareR(data.care_r||{});await dbSet(K.care,data.care_r||{});}
     if(data.memo_r!==undefined){setMemoR(data.memo_r||{});await dbSet(K.memo,data.memo_r||{});}
     if(data.mood_r!==undefined){setMoodR(data.mood_r||{});await dbSet(K.mood,data.mood_r||{});}
     if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
@@ -1548,14 +1548,14 @@ function App() {
     // 復元直後はバックアップ催促を出さない（最終バックアップ日時を今に更新）
     setBackupDue(false);await saveSets({lastBackup:Date.now()});
   },[saveSets]);
-  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
+  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setSkinR({});setCareR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.skin,{}),dbSet(K.care,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
 
   if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
 
   const mainTabs=tabOrder.filter(t=>!hiddenTabs.includes(t));
   const isSecondary=SECONDARY_TABS.includes(tab);
   const activeTab=([...mainTabs,...SECONDARY_TABS]).includes(tab)?tab:(mainTabs[0]||"settings");
-  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
+  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,skin_r:skinR,care_r:careR,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
 
   // タイトルタップ：セカンダリタブからメインタブへ
   const handleTitleTap=()=>{if(isSecondary){const t=mainTabs.find(t=>t===tab)||mainTabs[0]||DEFAULT_TAB_ORDER[0];changeTab(t);}};
@@ -1586,15 +1586,13 @@ function App() {
         </div>
       )}
       {isSecondary&&<div style={{marginBottom:14}}/>}
-      {activeTab==="bath"     &&<BathTab     records={bathR}  onUpdate={saveBath} dateNav={dateNav}/>}
       {activeTab==="med"      &&<MedTab      records={medR}   config={medC} onTake={medTake} onUpdate={medUpd} onRemove={medRem} onPrnAdd={prnAdd} onPrnTime={prnTime} onPrnRemove={prnRemove} dateNav={dateNav}/>}
       {activeTab==="meal"     &&<MealTab     records={mealR}  onUpdate={saveMeal} dateNav={dateNav}/>}
-      {activeTab==="teeth"    &&<TeethTab    records={teethR} teethConf={teethConf} onUpdate={saveTeeth} dateNav={dateNav}/>}
-      {activeTab==="memo"     &&<MemoTab     records={memoR}  onUpdate={saveMemo} dateNav={dateNav}/>}
-      {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood} dateNav={dateNav}/>}
-      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
-      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} moodR={moodR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} teethConf={teethConf} onTeethConfChange={saveTeethC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {activeTab==="care"     &&<CareTab     careR={careR} onCare={saveCare} dateNav={dateNav}/>}
+      {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood} memoR={memoR} onMemoUpdate={saveMemo} dateNav={dateNav}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
+      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} moodR={moodR}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
       {backupDue&&(
         <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:9998,display:"flex",alignItems:"center",gap:10,
           padding:"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
