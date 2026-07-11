@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "6.3";
+const APP_VERSION = "6.4";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -279,11 +279,11 @@ function normCare(v){
   return v;
 }
 // 評価記号（✕△○◎）を同じ線幅のSVGで描画
-function CareMark({n,on}) {
+function CareMark({n,on,size=15,op,inline}) {
   const sw=1;
   const common={fill:"none",stroke:"#000",strokeWidth:sw,strokeLinecap:"round",strokeLinejoin:"round"};
   return(
-    <svg width="15" height="15" viewBox="0 0 16 16" style={{display:"block",opacity:on?0.6:0.3}}>
+    <svg width={size} height={size} viewBox="0 0 16 16" style={{display:inline?"inline-block":"block",verticalAlign:inline?"-2px":undefined,opacity:op??(on?0.6:0.3)}}>
       {n===1&&<>
         <line x1="4.2" y1="4.2" x2="11.8" y2="11.8" {...common}/>
         <line x1="11.8" y1="4.2" x2="4.2" y2="11.8" {...common}/>
@@ -1076,9 +1076,9 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}
             const o=normCare(careR?.[ds]?.[cc.key]);if(o.r!=null)vals.push(o.r);}
           if(!vals.length)return null;
           const avg=vals.reduce((s,v)=>s+v,0)/vals.length;
-          const avgLabel=CARE_RATING_LABELS[Math.min(3,Math.max(0,Math.round(avg)-1))];
+          const avgN=Math.min(4,Math.max(1,Math.round(avg)));
           const low=vals.filter(v=>v===1).length;
-          return{...cc,n:vals.length,avgLabel,low};
+          return{...cc,n:vals.length,avgN,low};
         }).filter(Boolean);
         let calSum=0,calDays=0;
         for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
@@ -1091,7 +1091,7 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}
           <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>生活</p>
           {careStats.map(cs=>(
             <Row key={cs.key} label={`${cs.label}（記録${cs.n}日）`} color={cs.color}
-              right={`平均 ${cs.avgLabel}・できなかった日 ${cs.low}日`}/>
+              right={<>平均 <CareMark n={cs.avgN} size={12} op={0.55} inline/>・できなかった日 {cs.low}日</>}/>
           ))}
           {calDays>0&&<Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>}
         </>);
