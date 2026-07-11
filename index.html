@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "6.4";
+const APP_VERSION = "6.5";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -795,7 +795,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,ta
         const moodItems=[];
         if(mood){
           const allTags=tagConf?.tags||[];
-          if(mood.mood!=null)moodItems.push({t:null,label:`気分: ${MOOD_LABELS[mood.mood]}`,color:MOOD_COLORS[mood.mood],sub:""});
+          if(mood.mood!=null)moodItems.push({t:null,label:"気分",color:"#f5e6b0",sub:MOOD_LABELS[mood.mood]});
           const tagNames=(mood.tags||[]).map(t=>typeof t==="string"?((allTags.find(x=>x.id===t)||{}).name):t.name).filter(Boolean);
           if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#dddddd",sub:tagNames.join("・")});
           if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
