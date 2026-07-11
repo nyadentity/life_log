@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "6.0";
+const APP_VERSION = "6.3";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -789,7 +789,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,ta
         const medItems=[];
         aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
         dW.forEach(wm=>{const k=`w:${wm.id}`;if(med[k])medItems.push({t:med[k],label:(med.__names&&med.__names[k]?med.__names[k][0]:wm.name),color:WC,sub:""});});
-        (Array.isArray(med.prnList)?med.prnList:[]).forEach(e=>medItems.push({t:e.time,label:`頓服 ${e.name}`,color:e.color||"#d0d0d0",sub:""}));
+        (Array.isArray(med.prnList)?med.prnList:[]).forEach(e=>medItems.push({t:e.time,label:`頓服 ${e.name}`,color:"#f5e6b0",sub:""}));
         if(med.prn)medItems.push({t:null,label:"頓服メモ",color:"#f5e6b0",sub:med.prn});
         const filteredMed=medItems.filter(matchQ).sort(sortT);
         const moodItems=[];
@@ -797,7 +797,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,ta
           const allTags=tagConf?.tags||[];
           if(mood.mood!=null)moodItems.push({t:null,label:`気分: ${MOOD_LABELS[mood.mood]}`,color:MOOD_COLORS[mood.mood],sub:""});
           const tagNames=(mood.tags||[]).map(t=>typeof t==="string"?((allTags.find(x=>x.id===t)||{}).name):t.name).filter(Boolean);
-          if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#b8d8f0",sub:tagNames.join("・")});
+          if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#dddddd",sub:tagNames.join("・")});
           if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
           if(mood.condition!=null)moodItems.push({t:null,label:"体調",color:"#cfe0f2",sub:RATING_LABELS[mood.condition-1]});
           if(mood.sleep!=null)moodItems.push({t:null,label:"睡眠",color:"#ddd2f0",sub:RATING_LABELS[mood.sleep-1]});
@@ -1064,29 +1064,35 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}
         ))}
       </>}
       {(()=>{
-        // ── 生活：入浴・歯磨き・スキンケアの実施日数、平均カロリー ──
-        // 実施日 = 旧形式の打刻がある日、または清潔タブの評価が「すこしできた」以上の日
-        const doneDay=(ds,legacy,key)=>{
-          if(Array.isArray(legacy?.[ds])&&legacy[ds].length>0)return true;
-          const o=normCare(careR?.[ds]?.[key]);
-          return o.r!=null&&o.r>=2;
-        };
-        let bathDays=0,teethDays=0,skinDays=0;
+        // ── 生活：入浴・歯磨き・スキンケアの平均評価（気分・体調・睡眠と同形式）、平均カロリー ──
+        const careCats=[
+          {key:"bath", label:"入浴",       color:CAT.bath.color},
+          {key:"teeth",label:"歯磨き",     color:CAT.teeth.color},
+          {key:"skin", label:"スキンケア", color:CAT.skin.color},
+        ];
+        const careStats=careCats.map(cc=>{
+          const vals=[];
+          for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+            const o=normCare(careR?.[ds]?.[cc.key]);if(o.r!=null)vals.push(o.r);}
+          if(!vals.length)return null;
+          const avg=vals.reduce((s,v)=>s+v,0)/vals.length;
+          const avgLabel=CARE_RATING_LABELS[Math.min(3,Math.max(0,Math.round(avg)-1))];
+          const low=vals.filter(v=>v===1).length;
+          return{...cc,n:vals.length,avgLabel,low};
+        }).filter(Boolean);
         let calSum=0,calDays=0;
         for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
-          if(doneDay(ds,bathR,"bath"))bathDays++;
-          if(doneDay(ds,teethR,"teeth"))teethDays++;
-          if(doneDay(ds,skinR,"skin"))skinDays++;
           const meals=Array.isArray(mealR?.[ds])?mealR[ds]:[];
           const dayCal=meals.reduce((s,e)=>s+(e.calories||0),0);
           if(dayCal>0){calSum+=dayCal;calDays++;}
         }
-        if(bathDays===0&&teethDays===0&&skinDays===0&&calDays===0)return null;
+        if(careStats.length===0&&calDays===0)return null;
         return(<>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>生活</p>
-          {bathDays>0&&<Row label="入浴" color={CAT.bath.color} right={`${bathDays}日`}/>}
-          {teethDays>0&&<Row label="歯磨き" color={CAT.teeth.color} right={`${teethDays}日`}/>}
-          {skinDays>0&&<Row label="スキンケア" color={CAT.skin.color} right={`${skinDays}日`}/>}
+          {careStats.map(cs=>(
+            <Row key={cs.key} label={`${cs.label}（記録${cs.n}日）`} color={cs.color}
+              right={`平均 ${cs.avgLabel}・できなかった日 ${cs.low}日`}/>
+          ))}
           {calDays>0&&<Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>}
         </>);
       })()}
