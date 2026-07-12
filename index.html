@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "6.5";
+const APP_VERSION = "8.5";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -46,6 +46,9 @@ const CAT = {
   meal:  { color:"#b8dda0", dim:"rgba(184,221,160,0.4)" },
   teeth: { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
   skin:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
+  body:  { color:"#d8c8ec", dim:"rgba(216,200,236,0.4)" },
+  weight:{ color:"#b8cdf0", dim:"rgba(184,205,240,0.4)" },
+  period:{ color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
   memo:  { color:"#cccccc", dim:"rgba(204,204,204,0.4)" },
   mood:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
 };
@@ -53,8 +56,8 @@ const CARE_RATING_LABELS = ["✕","△","○","◎"];
 const MOOD_LABELS = ["最悪","悪い","ふつう","良い","最高"];
 const MOOD_COLORS = ["#f5c2c2","#fad9c0","#f5edc0","#d4ebc2","#b3d9ed"];
 const RATING_FIELDS = [
-  { key:"condition", label:"体調", color:"#cfe0f2" },
-  { key:"sleep",     label:"睡眠", color:"#ddd2f0" },
+  { key:"condition", label:"体調", color:"#a8c8e8" },
+  { key:"sleep",     label:"睡眠", color:"#c8b8e8" },
 ];
 const RATING_LABELS = ["最悪","悪い","ふつう","良い","最高"];
 const MEAL_COLORS = {
@@ -67,13 +70,13 @@ const MEAL_COLORS = {
 const MEAL_CATS = ["朝食","昼食","夕食","間食"];
 
 const SECONDARY_TABS = ["timeline","stats","settings"];
-const DEFAULT_TAB_ORDER = ["meal","med","care","mood"];
+const DEFAULT_TAB_ORDER = ["meal","med","care","body","mood"];
 const TAB_LABELS = {
-  care:"ケア", med:"服薬", meal:"食事", mood:"日記",
+  care:"ケア", med:"服薬", meal:"食事", body:"身体", mood:"日記",
   timeline:"履歴", stats:"統計", settings:"設定"
 };
 const DB_NAME = "daily-log";
-const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", skin:"skin_r", care:"care_r", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
+const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", skin:"skin_r", care:"care_r", body:"body_r", bodyC:"body_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
 
 // ── IndexedDB ──────────────────────────────────────────────
 let _db = null;
@@ -273,6 +276,24 @@ function useDateNav(realToday) {
 // ── 清潔タブ（入浴・歯磨き・スキンケア）───────────────────
 // 記録: careR = {date:{bath:{r:1-4,memo:""},teeth:{...},skin:{...}}}
 // 旧形式（数値1-3）は読み込み時に正規化: 1=できなかった, 2→3=できた, 3→4=よくできた
+// 日付ユーティリティ（YYYY-MM-DD）
+function addD(ds,n){const t=new Date(ds+"T00:00:00");t.setDate(t.getDate()+n);const p=x=>String(x).padStart(2,"0");return`${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}`;}
+function diffD(a,b){return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);}
+// 月経周期の集計：開始日リスト・平均周期・平均期間・次回予測
+function periodStats(bodyR){
+  const set=new Set(Object.keys(bodyR||{}).filter(d=>bodyR[d]?.period));
+  if(!set.size)return null;
+  const days=[...set].sort();
+  const starts=days.filter(d=>!set.has(addD(d,-1)));
+  const lens=starts.map(s=>{let n=0,cur=s;while(set.has(cur)){n++;cur=addD(cur,1);}return n;});
+  const diffs=[];
+  for(let i=1;i<starts.length;i++){const dd=diffD(starts[i-1],starts[i]);if(dd>=15&&dd<=90)diffs.push(dd);}
+  const avgCycle=diffs.length?Math.round(diffs.reduce((s,v)=>s+v,0)/diffs.length):null;
+  const avgLen=lens.length?Math.round(lens.reduce((s,v)=>s+v,0)/lens.length*10)/10:null;
+  const lastStart=starts[starts.length-1];
+  const next=lastStart&&avgCycle?addD(lastStart,avgCycle):null;
+  return{starts,avgCycle,avgLen,lastStart,next,cycleCount:diffs.length};
+}
 function normCare(v){
   if(v==null)return{};
   if(typeof v==="number")return{r:v===1?1:v+1};
@@ -352,6 +373,83 @@ function CareMemo({memo,onChange}) {
     <textarea ref={ref} defaultValue={memo||""} rows={1} placeholder="メモ（任意）"
       onInput={e=>fitTextarea(e.target)} onBlur={e=>onChange(e.target.value)}
       style={{width:"100%",border:"none",background:"transparent",fontSize:12,color:"rgba(0,0,0,0.55)",outline:"none",resize:"none",lineHeight:1.6,fontFamily:"inherit",padding:"8px 0 0 16px",overflow:"hidden"}}/>
+  );
+}
+
+// ── 身体タブ（体重・BMI・月経）───────────────────
+// 記録: bodyR = {date:{weight:kg, period:true}} / 設定: bodyC = {height:cm}
+function BodyTab({records,conf,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const rec=records[curDate]||{};
+  const height=conf?.height||null;
+  const[editW,setEditW]=useState(false);
+  const[wVal,setWVal]=useState("");
+  useEffect(()=>{setEditW(false);},[curDate]);
+  const patch=p=>{
+    const nx=JSON.parse(JSON.stringify(records));
+    const next={...(nx[curDate]||{}),...p};
+    Object.keys(next).forEach(k=>{if(next[k]==null||next[k]===false||next[k]==="")delete next[k];});
+    if(Object.keys(next).length)nx[curDate]=next;else delete nx[curDate];
+    onUpdate(nx);
+  };
+  const bmi=rec.weight&&height?rec.weight/Math.pow(height/100,2):null;
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {/* 体重・BMI */}
+      <div style={card}><div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:4,height:20,borderRadius:2,background:rec.weight?CAT.weight.color:"rgba(0,0,0,0.08)",flexShrink:0}}/>
+          <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>体重</span>
+          {editW?(
+            <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+              <input autoFocus type="number" inputMode="decimal" step="0.1" min="0" value={wVal}
+                placeholder="--.-"
+                onChange={e=>setWVal(e.target.value)}
+                onBlur={()=>{const v=parseFloat(wVal);patch({weight:isNaN(v)||v<=0?null:Math.round(v*10)/10});setEditW(false);}}
+                onKeyDown={e=>{if(e.key==="Enter")e.target.blur();}}
+                style={{width:`${Math.max(4,String(wVal).length+1)}ch`,border:"none",borderBottom:"1px solid rgba(0,0,0,0.15)",background:"transparent",borderRadius:0,padding:"4px 0 1px",fontSize:12,fontWeight:400,color:"rgba(0,0,0,0.45)",outline:"none",fontFamily:"inherit",textAlign:"center"}}/>
+              <span style={{fontSize:12,fontWeight:400,color:"rgba(0,0,0,0.4)"}}>kg{(()=>{
+                const v=parseFloat(wVal);
+                return height&&!isNaN(v)&&v>0?`・BMI ${(v/Math.pow(height/100,2)).toFixed(1)}`:"";
+              })()}</span>
+            </span>
+          ):(
+            rec.weight!=null&&<span style={{fontSize:12,fontWeight:400,color:"rgba(0,0,0,0.4)"}}>{rec.weight}kg{bmi?`・BMI ${bmi.toFixed(1)}`:""}</span>
+          )}
+          <div style={{flex:1}}/>
+          <button
+            onPointerDown={e=>{
+              e.preventDefault();
+              if(editW){
+                const v=parseFloat(wVal);
+                patch({weight:isNaN(v)||v<=0?null:Math.round(v*10)/10});
+                setEditW(false);
+              }else{
+                setWVal(rec.weight!=null?String(rec.weight):"");
+                setEditW(true);
+              }
+            }}
+            style={{background:editW?"rgba(0,0,0,0.06)":hexA(CAT.weight.color,0.8),border:"none",borderRadius:20,padding:"6px 18px",fontSize:12,fontWeight:600,
+              color:editW?"rgba(0,0,0,0.3)":"rgba(0,0,0,0.5)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>記入</button>
+        </div>
+      </div></div>
+      {/* 月経 */}
+      <div style={card}><div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:4,height:20,borderRadius:2,background:rec.period?CAT.period.color:"rgba(0,0,0,0.08)",flexShrink:0}}/>
+          <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>月経</span>
+          {rec.period&&<span style={{fontSize:12,fontWeight:400,color:"rgba(0,0,0,0.4)"}}>あり</span>}
+          <div style={{flex:1}}/>
+          <button onClick={()=>patch({period:rec.period?null:true})}
+            style={{background:rec.period?hexA(CAT.period.color,0.8):"rgba(0,0,0,0.06)",border:"none",borderRadius:20,padding:"6px 18px",fontSize:12,fontWeight:600,
+              color:rec.period?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)",cursor:"pointer",fontFamily:"inherit"}}>
+            あり
+          </button>
+        </div>
+      </div></div>
+    </div>
   );
 }
 
@@ -666,7 +764,7 @@ function MoodTab({records,tagConf,onUpdate,memoR,onMemoUpdate,dateNav}) {
           {MOOD_LABELS.map((lb,i)=>(
             <button key={i} onClick={()=>patch({mood:rec.mood===i?null:i})}
               style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
-                background:rec.mood===i?MOOD_COLORS[i]:"rgba(0,0,0,0.06)",color:rec.mood===i?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                background:rec.mood===i?hexA(CAT.mood.color,0.8):"rgba(0,0,0,0.06)",color:rec.mood===i?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
               {lb}
             </button>
           ))}
@@ -681,7 +779,7 @@ function MoodTab({records,tagConf,onUpdate,memoR,onMemoUpdate,dateNav}) {
             {RATING_LABELS.map((lb,i)=>{const n=i+1;const on=rec[f.key]===n;return(
               <button key={n} onClick={()=>patch({[f.key]:on?null:n})}
                 style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:600,border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
-                  background:on?MOOD_COLORS[i]:"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                  background:on?hexA(f.color,0.8):"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
                 {lb}
               </button>
             );})}
@@ -698,7 +796,7 @@ function MoodTab({records,tagConf,onUpdate,memoR,onMemoUpdate,dateNav}) {
             {tags.map(t=>{const on=isTagOn(t.id);return(
               <button key={t.id} onClick={()=>toggleTag(t)}
                 style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
-                  background:on?(t.color||"#b8d8f0"):"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+                  background:on?hexA(t.color||"#b8d8f0",0.8):"rgba(0,0,0,0.06)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
                 {t.name}
               </button>
             );})}
@@ -724,7 +822,7 @@ function DiaryField({value,onChange}) {
 }
 
 // ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
-function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,tagConf,teethConf}) {
+function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,memoR,moodR,tagConf,teethConf}) {
   const[search,setSearch]=useState("");
   const q=search.trim().toLowerCase();
   const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
@@ -795,7 +893,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,ta
         const moodItems=[];
         if(mood){
           const allTags=tagConf?.tags||[];
-          if(mood.mood!=null)moodItems.push({t:null,label:"気分",color:"#f5e6b0",sub:MOOD_LABELS[mood.mood]});
+          if(mood.mood!=null)moodItems.push({t:null,label:"気分",color:CAT.mood.color,sub:MOOD_LABELS[mood.mood]});
           const tagNames=(mood.tags||[]).map(t=>typeof t==="string"?((allTags.find(x=>x.id===t)||{}).name):t.name).filter(Boolean);
           if(tagNames.length)moodItems.push({t:null,label:"タグ",color:"#dddddd",sub:tagNames.join("・")});
           if((mood.diary||"").trim())moodItems.push({t:null,label:"日記",color:CAT.mood.color,sub:mood.diary});
@@ -803,7 +901,16 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,memoR,moodR,ta
           if(mood.sleep!=null)moodItems.push({t:null,label:"睡眠",color:"#ddd2f0",sub:RATING_LABELS[mood.sleep-1]});
         }
         const filteredMood=moodItems.filter(matchQ);
-        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"skin",items:skinItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
+        const body=bodyR?.[ds]||{};
+        const bodyItems=[];
+        if(body.weight!=null){
+          const h=bodyC?.height;
+          const bmi=h?`・BMI ${(body.weight/Math.pow(h/100,2)).toFixed(1)}`:"";
+          bodyItems.push({t:null,label:"体重",color:CAT.weight.color,sub:`${body.weight}kg${bmi}`});
+        }
+        if(body.period)bodyItems.push({t:null,label:"月経",color:CAT.period.color,sub:"あり"});
+        const filteredBody=bodyItems.filter(matchQ);
+        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"body",items:filteredBody},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"skin",items:skinItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
         if(!groups.length)return null;
         return(
           <div key={ds} style={card}><div style={{padding:"12px 16px"}}>
@@ -891,13 +998,13 @@ function MonthCalendar({month,bathR,teethR,skinR,careR}) {
 // ── 統計：服薬チャート ─────────────────────────────────────
 function MedTimingChart({records,config,month}) {
   const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
-  const H=160,Y0=6,Y1=26,YR=Y1-Y0;
+  const H=160,Y0=0,Y1=24,YR=Y1-Y0;
   // 系列を構築：各スロット + 曜日薬
   const aSlots=SLOT_DEFS.filter(s=>config.slots[s.id]?.enabled);
   // 曜日限定の薬はグラフに表示しない（定時スロットのみ）
   const series=aSlots.map(s=>({key:s.id,label:s.label,color:s.color,weekly:false}));
   // 各系列につき、日ごとの服用時刻（h）を集める
-  const toH=iso=>{const t=new Date(iso);let h=t.getHours()+t.getMinutes()/60;if(h<Y0)h+=24;return (h>=Y0&&h<=Y1)?h:null;};
+  const toH=iso=>{const t=new Date(iso);const h=t.getHours()+t.getMinutes()/60;return (h>=Y0&&h<=Y1)?h:null;};
   const seriesData=series.map(s=>{
     const pts=[];
     for(let day=1;day<=dim;day++){
@@ -911,7 +1018,7 @@ function MedTimingChart({records,config,month}) {
     return {...s,pts};
   });
   const has=seriesData.some(s=>s.pts.some(p=>p.h!=null));
-  const ticks=[6,9,12,15,18,21,24];
+  const ticks=[0,4,8,12,16,20,24];
   if(!has)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>今月の記録がありません</p>;
   const xOf=day=>dim>1?((day-1)/(dim-1))*100:50;
   const yOf=h=>((h-Y0)/YR)*100;
@@ -919,7 +1026,7 @@ function MedTimingChart({records,config,month}) {
     <div>
       <div style={{display:"flex"}}>
         <div style={{width:28,position:"relative",height:H,flexShrink:0}}>
-          {ticks.map(h=><div key={h} style={{position:"absolute",right:4,top:`${yOf(h)}%`,fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",textAlign:"right",whiteSpace:"nowrap"}}>{h>=24?`${h-24}時`:`${h}時`}</div>)}
+          {ticks.map(h=><div key={h} style={{position:"absolute",right:4,top:`${yOf(h)}%`,fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",textAlign:"right",whiteSpace:"nowrap"}}>{`${h%24}時`}</div>)}
         </div>
         <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8,overflow:"hidden"}}>
           {ticks.map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${yOf(h)}%`,height:1,background:"rgba(0,0,0,0.07)"}}/>)}
@@ -972,7 +1079,7 @@ function DailyCalChart({records,month}) {
 }
 
 // ── 統計タブ ──────────────────────────────────────────────
-function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,moodR}) {
+function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,moodR}) {
   const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
   const prev=()=>setMonth(addMonths(month,-1));
   const next=()=>{const n=addMonths(month,1);if(n<=curMonth)setMonth(n);};
@@ -989,6 +1096,111 @@ function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,moodR}) {
       <div style={card}><div style={{padding:"12px 16px"}}><DailyCalChart records={mealR} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>気分・体調・睡眠</p>
       <div style={card}><div style={{padding:"12px 16px"}}><MoodCombinedChart records={moodR} month={month}/></div></div>
+
+      <p style={{...secLbl,marginTop:8}}>体重</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><WeightChart records={bodyR} month={month}/></div></div>
+
+      <p style={{...secLbl,marginTop:8}}>月経周期</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><PeriodSummary bodyR={bodyR}/></div></div>
+    </div>
+  );
+}
+
+// ── 体重推移グラフ ───────────────────
+function WeightChart({records,month}) {
+  const today=todayKey();
+  const[mode,setMode]=useState("month"); // "month" | "year"
+  const[y,m]=month.split("-");const dim=dimY(y,m);
+  // データ点の収集
+  const pts=[];
+  if(mode==="month"){
+    for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+      const w=records?.[ds]?.weight;if(w!=null)pts.push({x:d,w});}
+  }else{
+    // 年表示：1年分（1/1〜12/31）を日単位で
+    const start=`${y}-01-01`;
+    Object.keys(records||{}).sort().forEach(ds=>{
+      if(!ds.startsWith(`${y}-`)||ds>today)return;
+      const w=records[ds]?.weight;if(w==null)return;
+      pts.push({x:diffD(start,ds)+1,w});
+    });
+  }
+  const X=mode==="month"?dim:(dimY(y,12)===31?diffD(`${y}-01-01`,`${y}-12-31`)+1:365);
+  const toggle=(
+    <div style={{display:"flex",gap:6,marginBottom:10,justifyContent:"center"}}>
+      {[["month","月"],["year","年"]].map(([k,lb])=>(
+        <button key={k} onClick={()=>setMode(k)}
+          style={{border:"none",cursor:"pointer",fontFamily:"inherit",borderRadius:14,padding:"5px 14px",fontSize:10,fontWeight:600,
+            background:mode===k?"rgba(0,0,0,0.08)":"rgba(0,0,0,0.03)",color:mode===k?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>
+          {lb}
+        </button>
+      ))}
+    </div>
+  );
+  if(!pts.length)return<div>{toggle}<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p></div>;
+  const ws=pts.map(p=>p.w);
+  const lo=Math.floor(Math.min(...ws)-0.5),hi=Math.ceil(Math.max(...ws)+0.5);
+  const H=130;
+  const yOf=w=>H-8-((w-lo)/(hi-lo))*(H-16);
+  const xOf=x=>X>1?((x-1)/(X-1))*100:50;
+  const lineD=pts.map((p,i)=>`${i?"L":"M"} ${xOf(p.x)} ${yOf(p.w)}`).join(" ");
+  const ticks=[hi,(hi+lo)/2,lo];
+  const xLabels=mode==="month"
+    ?[["1日",0],[`${Math.round(dim/2)}日`,50],[`${dim}日`,100]]
+    :[["1月",0],["6月",Math.round(xOf(diffD(`${y}-01-01`,`${y}-06-15`)+1))],["12月",100]];
+  return(
+    <div>
+      {toggle}
+      <div style={{display:"flex"}}>
+        <div style={{width:38,position:"relative",height:H,flexShrink:0}}>
+          {ticks.map((v,i)=>(
+            <div key={i} style={{position:"absolute",right:4,top:yOf(v),fontSize:8,color:"rgba(0,0,0,0.3)",transform:"translateY(-50%)",whiteSpace:"nowrap"}}>{Math.round(v*10)/10}</div>
+          ))}
+        </div>
+        <div style={{flex:1,position:"relative",height:H,background:"rgba(0,0,0,0.02)",borderRadius:8}}>
+          {ticks.map((v,i)=><div key={i} style={{position:"absolute",left:0,right:0,top:yOf(v),height:1,background:"rgba(0,0,0,0.05)"}}/>)}
+          <svg viewBox={`0 0 100 ${H}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",overflow:"visible"}} preserveAspectRatio="none">
+            <path d={lineD} fill="none" stroke={CAT.weight.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+          </svg>
+          {pts.map(p=>(
+            <div key={p.x} style={{position:"absolute",left:`${xOf(p.x)}%`,top:yOf(p.w),width:mode==="month"?4:3,height:mode==="month"?4:3,borderRadius:"50%",background:CAT.weight.color,transform:"translate(-50%,-50%)"}}/>
+          ))}
+          {xLabels.map(([lb,pos],i)=>(
+            <span key={i} style={{position:"absolute",bottom:-14,left:`${pos}%`,fontSize:8,color:"rgba(0,0,0,0.25)",transform:pos===0?"none":pos===100?"translateX(-100%)":"translateX(-50%)"}}>{lb}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{height:8}}/>
+    </div>
+  );
+}
+
+// ── 月経周期サマリー ───────────────────
+function PeriodSummary({bodyR}) {
+  const st=periodStats(bodyR);
+  const today=todayKey();
+  const fmt=ds=>{const[,mm,dd]=ds.split("-");return`${+mm}月${+dd}日`;};
+  const PRow=({label,right})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0"}}>
+      <div style={{width:3,height:14,borderRadius:2,background:CAT.period.color,flexShrink:0}}/>
+      <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{label}</span>
+      <span style={{fontSize:12,fontWeight:600,color:"rgba(0,0,0,0.55)"}}>{right}</span>
+    </div>
+  );
+  if(!st)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>記録がありません</p>;
+  return(
+    <div>
+      {st.lastStart&&<PRow label="前回開始" right={fmt(st.lastStart)}/>}
+      {st.avgLen!=null&&<PRow label="平均期間" right={`${st.avgLen}日`}/>}
+      {st.avgCycle!=null
+        ?<PRow label={`平均周期（${st.cycleCount}周期分）`} right={`${st.avgCycle}日`}
+        />
+        :<p style={{fontSize:11,color:"rgba(0,0,0,0.35)",padding:"4px 0 0 11px"}}>周期は開始が2回以上記録されると計算されます</p>}
+      {st.next&&(()=>{
+        const du=diffD(today,st.next);
+        const rel=du>0?`あと${du}日`:du===0?"今日":`${-du}日経過`;
+        return<PRow label="次回予測" right={`${fmt(st.next)}（${rel}）`}/>;
+      })()}
     </div>
   );
 }
@@ -1191,6 +1403,7 @@ function MedSettingsSection({config,onConfigChange}) {
   const tog=id=>upd(id,{enabled:!config.slots[id].enabled});
   const addM=sId=>{const n=newMeds[sId].trim();if(!n)return;upd(sId,{meds:[...(config.slots[sId]?.meds||[]),{id:uid(),name:n}]});setNewMeds(p=>({...p,[sId]:""}));};
   // 編集保存：空名の場合もeditingMedを閉じる
+  const moveM=(sId,mId,dir)=>{const a=[...config.slots[sId].meds];const i=a.findIndex(m=>m.id===mId);const j=i+dir;if(i<0||j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];upd(sId,{meds:a});};
   const saveE=(sId,mId,n)=>{n=n.trim();if(n)upd(sId,{meds:config.slots[sId].meds.map(m=>m.id===mId?{...m,name:n}:m)});setEditingMed(null);};
   const delM=(sId,mId)=>upd(sId,{meds:config.slots[sId].meds.filter(m=>m.id!==mId)});
   const addW=()=>{const n=newWN.trim();if(!n||!newWD.length)return;onConfigChange({...config,weeklyMeds:[...config.weeklyMeds,{id:uid(),name:n,weekdays:[...newWD]}]});setNewWN("");setNewWD([]);};
@@ -1228,6 +1441,12 @@ function MedSettingsSection({config,onConfigChange}) {
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0"}}>
                       <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{med.name}</span>
+                      {(()=>{const i=meds.findIndex(m=>m.id===med.id);return(<>
+                        <button onClick={()=>moveM(s.id,med.id,-1)} disabled={i===0}
+                          style={{...smBtn(),fontSize:11,padding:"3px 8px",opacity:i===0?0.3:1}}>上へ</button>
+                        <button onClick={()=>moveM(s.id,med.id,1)} disabled={i===meds.length-1}
+                          style={{...smBtn(),fontSize:11,padding:"3px 8px",opacity:i===meds.length-1?0.3:1}}>下へ</button>
+                      </>);})()}
                       <button onClick={()=>setEditingMed({slotId:s.id,medId:med.id})} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
                     </div>
                   )}
@@ -1399,7 +1618,58 @@ function PrnSettingsSection({config,onConfigChange}) {
 }
 
 // ── 設定タブ ──────────────────────────────────────────────
-function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,tagConf,onTagConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
+// ── 過去の体重・月経期間の記入（設定 > 身体）──────────────
+function BodyBackfill({bodyR,onBodyUpdate}) {
+  const today=todayKey();
+  const wDateRef=useRef(null),wValRef=useRef(null);
+  const pFromRef=useRef(null),pToRef=useRef(null);
+  const[msg,setMsg]=useState("");
+  const flash=t=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
+  const fmt=ds=>{const[,mm,dd]=ds.split("-");return`${+mm}/${+dd}`;};
+  const dateInp={border:"none",background:"rgba(0,0,0,0.04)",borderRadius:10,padding:"6px 8px",fontSize:12,color:"rgba(0,0,0,0.6)",outline:"none",fontFamily:"inherit"};
+  const addWeight=()=>{
+    const d=wDateRef.current?.value;
+    const v=parseFloat(wValRef.current?.value);
+    if(!d||d>today||isNaN(v)||v<=0){flash("日付と体重を確認してください");return;}
+    const nx=JSON.parse(JSON.stringify(bodyR));
+    nx[d]={...(nx[d]||{}),weight:Math.round(v*10)/10};
+    onBodyUpdate(nx);
+    if(wValRef.current)wValRef.current.value="";
+    flash(`${fmt(d)} の体重を記録しました`);
+  };
+  const addPeriod=()=>{
+    const s=pFromRef.current?.value,e=pToRef.current?.value;
+    if(!s||!e||s>e||s>today){flash("開始日と終了日を確認してください");return;}
+    if(diffD(s,e)>60){flash("期間が長すぎます（60日以内）");return;}
+    const nx=JSON.parse(JSON.stringify(bodyR));
+    let cur=s;
+    while(cur<=e){nx[cur]={...(nx[cur]||{}),period:true};cur=addD(cur,1);}
+    onBodyUpdate(nx);
+    flash(`${fmt(s)}〜${fmt(e)} の月経を記録しました`);
+  };
+  return(
+    <div style={{...card,marginTop:6}}><div style={{padding:"12px 16px"}}>
+      <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:6}}>過去の体重を記入</p>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+        <input ref={wDateRef} type="date" max={today} style={dateInp}/>
+        <input ref={wValRef} type="number" inputMode="decimal" step="0.1" min="0" placeholder="--.-"
+          style={{...dateInp,width:54,textAlign:"right"}}/>
+        <span style={{fontSize:12,color:"rgba(0,0,0,0.45)"}}>kg</span>
+        <button onClick={addWeight} style={smBtn("#dddddd")}>追加</button>
+      </div>
+      <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,marginBottom:6}}>過去の月経期間を記録</p>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        <input ref={pFromRef} type="date" max={today} style={dateInp}/>
+        <span style={{fontSize:11,color:"rgba(0,0,0,0.4)"}}>〜</span>
+        <input ref={pToRef} type="date" max={today} style={dateInp}/>
+        <button onClick={addPeriod} style={smBtn("#dddddd")}>追加</button>
+      </div>
+      {msg&&<p style={{fontSize:11,color:"rgba(0,0,0,0.45)",marginTop:10}}>{msg}</p>}
+      <p style={{fontSize:10,color:"rgba(0,0,0,0.3)",marginTop:10,lineHeight:1.6}}>記録した日は身体タブで日付を移動して確認・修正できます。</p>
+    </div></div>
+  );
+}
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,tagConf,onTagConfChange,bodyC,onBodyConfChange,bodyR,onBodyUpdate,allData,onImport,onDeleteAll,onBackedUp}) {
   const[confirmDel,setConfirmDel]=useState(false);
   const[tabEditId,setTabEditId]=useState(null);
   const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
@@ -1431,6 +1701,18 @@ function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medCon
       );})}
       <p style={{...secLbl,marginTop:12}}>出来事タグ</p>
       <TagSettingsSection conf={tagConf} onConfChange={onTagConfChange}/>
+            <p style={{...secLbl,marginTop:12}}>身体</p>
+      <div style={card}><div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{flex:1,fontSize:13,color:"rgba(0,0,0,0.6)"}}>身長（BMI計算用）</span>
+          <input type="number" inputMode="decimal" step="0.1" min="0" defaultValue={bodyC?.height??""}
+            placeholder="---"
+            onBlur={e=>{const v=parseFloat(e.target.value);onBodyConfChange({...(bodyC||{}),height:isNaN(v)||v<=0?null:Math.round(v*10)/10});}}
+            style={{width:70,border:"none",background:"rgba(0,0,0,0.04)",borderRadius:10,padding:"6px 8px",fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)",outline:"none",fontFamily:"inherit",textAlign:"right"}}/>
+          <span style={{fontSize:12,color:"rgba(0,0,0,0.45)"}}>cm</span>
+        </div>
+      </div></div>
+      <BodyBackfill bodyR={bodyR} onBodyUpdate={onBodyUpdate}/>
       <p style={{...secLbl,marginTop:12}}>服薬設定</p>
       <MedSettingsSection config={medConfig} onConfigChange={onMedConfigChange}/>
       <p style={{...secLbl,marginTop:12}}>頓服プリセット</p>
@@ -1461,6 +1743,8 @@ function App() {
   const[teethR,   setTeethR]   =useState({});
   const[skinR,    setSkinR]    =useState({});
   const[careR,    setCareR]    =useState({});
+  const[bodyR,    setBodyR]    =useState({});
+  const[bodyC,    setBodyC]    =useState({});
   const[teethConf,setTeethConf]=useState(defaultTeethConf);
   const[memoR,    setMemoR]    =useState({});
   const[moodR,    setMoodR]    =useState({});
@@ -1471,20 +1755,21 @@ function App() {
   const[tab,      setTab]      =useState(DEFAULT_TAB_ORDER[0]);
   const[loaded,   setLoaded]   =useState(false);
   const[backupDue,setBackupDue]=useState(false);
+  const[periodDismiss,setPeriodDismiss]=useState(null);
   const dateNav=useDateNav(todayKey()); // 全記録タブで共有する日付ナビ
 
   useEffect(()=>{
     (async()=>{
       await migrateMed();
-      const[br,mr,mc,mlr,tr,tc,skr,cr,mmr,mdr,tgc,as_]=await Promise.all([
+      const[br,mr,mc,mlr,tr,tc,skr,cr,bdr,bdc,mmr,mdr,tgc,as_]=await Promise.all([
         dbGet(K.bath),dbGet(K.med),dbGet(K.medC),
-        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.skin),dbGet(K.care),dbGet(K.memo),
+        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.skin),dbGet(K.care),dbGet(K.body),dbGet(K.bodyC),dbGet(K.memo),
         dbGet(K.mood),dbGet(K.tagC),dbGet(K.set),
       ]);
       let conf=mc||defaultMedConf();const def=defaultMedConf();
       conf={...def,...conf,slots:{...def.slots,...conf.slots}};
       for(const sid of Object.keys(conf.slots))conf.slots[sid].meds=(conf.slots[sid].meds||[]).map(normMed);
-      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setSkinR(skr||{});setCareR(cr||{});setMemoR(mmr||{});setMoodR(mdr||{});
+      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setSkinR(skr||{});setCareR(cr||{});setBodyR(bdr||{});setBodyC(bdc||{});setMemoR(mmr||{});setMoodR(mdr||{});
       if(tc)setTeethConf(tc);
       if(tgc)setTagConf(tgc);
       // 旧タブ名の移行: bath/teeth→care, memo→mood
@@ -1500,6 +1785,7 @@ function App() {
       const hasData=Object.keys(br||{}).length||Object.keys(mr||{}).length||Object.keys(mlr||{}).length||Object.keys(tr||{}).length||Object.keys(mmr||{}).length||Object.keys(mdr||{}).length;
       const lb=as_?.lastBackup;
       if(hasData&&(!lb||(Date.now()-lb)>604800000))setBackupDue(true);
+      if(as_?.periodDismiss)setPeriodDismiss(as_.periodDismiss);
       setLoaded(true);
     })().catch(e=>{console.error('load error:',e);setLoaded(true);});
   },[]);
@@ -1512,12 +1798,26 @@ function App() {
   const saveTeethC=useCallback(async nx=>{setTeethConf(nx);await dbSet(K.teethC,nx);},[]);
   const saveSkin  =useCallback(async nx=>{setSkinR(nx);await dbSet(K.skin,nx);},[]);
   const saveCare  =useCallback(async nx=>{setCareR(nx);await dbSet(K.care,nx);},[]);
+  const saveBody  =useCallback(async nx=>{setBodyR(nx);await dbSet(K.body,nx);},[]);
+  const saveBodyC =useCallback(async nx=>{setBodyC(nx);await dbSet(K.bodyC,nx);},[]);
   const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
   const saveMood  =useCallback(async nx=>{setMoodR(nx);await dbSet(K.mood,nx);},[]);
   const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
   const saveSets  =useCallback(async patch=>{const cur=await dbGet(K.set)||{};await dbSet(K.set,{...cur,...patch});},[]);
 
   const markBackedUp  =useCallback(()=>{setBackupDue(false);saveSets({lastBackup:Date.now()});},[saveSets]);
+  // 月経予測の通知判定：予測日の3日前〜当日、その日の記録がまだ無い、閉じていない
+  const periodNotice=(()=>{
+    const st=periodStats(bodyR);
+    if(!st?.next)return null;
+    const t=todayKey();
+    const du=diffD(t,st.next);
+    if(du<0||du>3)return null;
+    if(bodyR[t]?.period)return null;
+    if(periodDismiss===st.next)return null;
+    return{next:st.next,du};
+  })();
+  const dismissPeriod=useCallback(()=>{const st=periodStats(bodyR);if(st?.next){setPeriodDismiss(st.next);saveSets({periodDismiss:st.next});}},[bodyR,saveSets]);
   const changeTab     =useCallback(t=>{setTab(t);if(!SECONDARY_TABS.includes(t))saveSets({lastTab:t});},[saveSets]);
   const toggleHidden  =useCallback(async tabId=>{const next=hiddenTabs.includes(tabId)?hiddenTabs.filter(t=>t!==tabId):[...hiddenTabs,tabId];setHiddenTabs(next);await saveSets({hiddenTabs:next});},[hiddenTabs,saveSets]);
   const changeTabOrder=useCallback(async o=>{setTabOrder(o);await saveSets({tabOrder:o});},[saveSets]);
@@ -1546,6 +1846,8 @@ function App() {
     if(data.teeth_c!==undefined){setTeethConf(data.teeth_c||defaultTeethConf());await dbSet(K.teethC,data.teeth_c||defaultTeethConf());}
     if(data.skin_r!==undefined){setSkinR(data.skin_r||{});await dbSet(K.skin,data.skin_r||{});}
     if(data.care_r!==undefined){setCareR(data.care_r||{});await dbSet(K.care,data.care_r||{});}
+    if(data.body_r!==undefined){setBodyR(data.body_r||{});await dbSet(K.body,data.body_r||{});}
+    if(data.body_c!==undefined){setBodyC(data.body_c||{});await dbSet(K.bodyC,data.body_c||{});}
     if(data.memo_r!==undefined){setMemoR(data.memo_r||{});await dbSet(K.memo,data.memo_r||{});}
     if(data.mood_r!==undefined){setMoodR(data.mood_r||{});await dbSet(K.mood,data.mood_r||{});}
     if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
@@ -1554,14 +1856,14 @@ function App() {
     // 復元直後はバックアップ催促を出さない（最終バックアップ日時を今に更新）
     setBackupDue(false);await saveSets({lastBackup:Date.now()});
   },[saveSets]);
-  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setSkinR({});setCareR({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.skin,{}),dbSet(K.care,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
+  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setSkinR({});setCareR({});setBodyR({});setBodyC({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.skin,{}),dbSet(K.care,{}),dbSet(K.body,{}),dbSet(K.bodyC,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
 
   if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
 
   const mainTabs=tabOrder.filter(t=>!hiddenTabs.includes(t));
   const isSecondary=SECONDARY_TABS.includes(tab);
   const activeTab=([...mainTabs,...SECONDARY_TABS]).includes(tab)?tab:(mainTabs[0]||"settings");
-  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,skin_r:skinR,care_r:careR,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
+  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,skin_r:skinR,care_r:careR,body_r:bodyR,body_c:bodyC,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
 
   // タイトルタップ：セカンダリタブからメインタブへ
   const handleTitleTap=()=>{if(isSecondary){const t=mainTabs.find(t=>t===tab)||mainTabs[0]||DEFAULT_TAB_ORDER[0];changeTab(t);}};
@@ -1595,10 +1897,24 @@ function App() {
       {activeTab==="med"      &&<MedTab      records={medR}   config={medC} onTake={medTake} onUpdate={medUpd} onRemove={medRem} onPrnAdd={prnAdd} onPrnTime={prnTime} onPrnRemove={prnRemove} dateNav={dateNav}/>}
       {activeTab==="meal"     &&<MealTab     records={mealR}  onUpdate={saveMeal} dateNav={dateNav}/>}
       {activeTab==="care"     &&<CareTab     careR={careR} onCare={saveCare} dateNav={dateNav}/>}
+      {activeTab==="body"     &&<BodyTab     records={bodyR} conf={bodyC} onUpdate={saveBody} dateNav={dateNav}/>}
       {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood} memoR={memoR} onMemoUpdate={saveMemo} dateNav={dateNav}/>}
-      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
-      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} moodR={moodR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} tagConf={tagConf} onTagConfChange={saveTagC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} bodyC={bodyC} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
+      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} moodR={moodR}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} tagConf={tagConf} onTagConfChange={saveTagC} bodyC={bodyC} onBodyConfChange={saveBodyC} bodyR={bodyR} onBodyUpdate={saveBody} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {periodNotice&&(
+        <div style={{position:"fixed",left:0,right:0,bottom:backupDue?"auto":0,top:backupDue?0:"auto",zIndex:9998,display:"flex",alignItems:"center",gap:10,
+          padding:backupDue?"calc(13px + env(safe-area-inset-top)) 16px 13px":"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
+          borderTop:backupDue?"none":"1px solid rgba(0,0,0,0.08)",borderBottom:backupDue?"1px solid rgba(0,0,0,0.08)":"none",
+          boxShadow:backupDue?"0 2px 12px rgba(0,0,0,0.06)":"0 -2px 12px rgba(0,0,0,0.06)"}}>
+          <div style={{width:3,height:16,borderRadius:2,background:CAT.period.color,flexShrink:0}}/>
+          <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>
+            {periodNotice.du===0?"月経予測日です":`月経予測日まであと${periodNotice.du}日`}（{(()=>{const[,mm,dd]=periodNotice.next.split("-");return`${+mm}月${+dd}日`;})()}）
+          </span>
+          <button onClick={dismissPeriod}
+            style={{background:"none",border:"none",color:"rgba(0,0,0,0.3)",fontSize:14,cursor:"pointer",padding:"4px",fontFamily:"inherit"}}>✕</button>
+        </div>
+      )}
       {backupDue&&(
         <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:9998,display:"flex",alignItems:"center",gap:10,
           padding:"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
