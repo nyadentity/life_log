@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "9.9";
+const APP_VERSION = "10.0";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -2090,19 +2090,21 @@ function LifeItemsEditor({conf,onChange}) {
 function LifeSubEditor({subs,onChange}) {
   const[nv,setNv]=useState("");
   const[editIdx,setEditIdx]=useState(null);
+  const[editVal,setEditVal]=useState("");
   const editRef=useRef(null);
   useEffect(()=>{if(editIdx!=null&&editRef.current)editRef.current.focus();},[editIdx]);
+  const openEdit=i=>{setEditIdx(i);setEditVal(subs[i]);};
   const add=()=>{const n=nv.trim();if(!n||subs.includes(n))return;onChange([...subs,n]);setNv("");};
   const rem=i=>{onChange(subs.filter((_,x)=>x!==i));setEditIdx(null);};
-  const save=i=>{const n=(editRef.current?.value||"").trim();if(n)onChange(subs.map((s,x)=>x===i?n:s));setEditIdx(null);};
-  const mv=(i,dir)=>{const j=i+dir;if(j<0||j>=subs.length)return;const a=[...subs];[a[i],a[j]]=[a[j],a[i]];onChange(a);};
+  const save=i=>{const n=editVal.trim();if(n)onChange(subs.map((s,x)=>x===i?n:s));setEditIdx(null);};
+  const mv=(i,dir)=>{const j=i+dir;if(j<0||j>=subs.length)return;const a=[...subs];[a[i],a[j]]=[a[j],a[i]];onChange(a);setEditIdx(j);};
   return(
     <div style={{marginBottom:14}}>
       {subs.map((s,i)=>(
         <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0"}}>
           {editIdx===i?(
             <div style={{flex:1,padding:"5px 0 10px"}}>
-              <input ref={editRef} type="text" defaultValue={s}
+              <input ref={editRef} type="text" value={editVal} onChange={e=>setEditVal(e.target.value)}
                 onKeyDown={e=>{if(e.key==="Enter")save(i);}}
                 style={{...inp,marginBottom:10}}/>
               <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -2120,7 +2122,7 @@ function LifeSubEditor({subs,onChange}) {
           ):(
             <>
               <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{s}</span>
-              <button onClick={()=>setEditIdx(i)} style={{...smBtn(),fontSize:10}}>編集</button>
+              <button onClick={()=>openEdit(i)} style={{...smBtn(),fontSize:10}}>編集</button>
             </>
           )}
         </div>
