@@ -31,7 +31,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── 定数 ──────────────────────────────────────────────────
-const APP_VERSION = "8.5";
+const APP_VERSION = "9.9";
 const PALETTE = ["#f5e6b0","#fbd5ac","#f5c2c2","#f7cfdc","#e0c8f0","#c2d0f0","#b8d8f0","#c2e6dd","#cce9b8","#dddddd"];
 const SLOT_DEFS = [
   { id:"morning",  label:"朝",    color:"#fbd5ac", dim:"rgba(251,213,172,0.35)" },
@@ -46,6 +46,9 @@ const CAT = {
   meal:  { color:"#b8dda0", dim:"rgba(184,221,160,0.4)" },
   teeth: { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
   skin:  { color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
+  dress: { color:"#dcebb0", dim:"rgba(220,235,176,0.4)" },
+  out:   { color:"#aadbd2", dim:"rgba(170,219,210,0.4)" },
+  shop:  { color:"#f5e6b0", dim:"rgba(245,230,176,0.4)" },
   body:  { color:"#d8c8ec", dim:"rgba(216,200,236,0.4)" },
   weight:{ color:"#b8cdf0", dim:"rgba(184,205,240,0.4)" },
   period:{ color:"#f7cfdc", dim:"rgba(247,207,220,0.4)" },
@@ -70,13 +73,13 @@ const MEAL_COLORS = {
 const MEAL_CATS = ["朝食","昼食","夕食","間食"];
 
 const SECONDARY_TABS = ["timeline","stats","settings"];
-const DEFAULT_TAB_ORDER = ["meal","med","care","body","mood"];
+const DEFAULT_TAB_ORDER = ["meal","med","care","body","life","mood"];
 const TAB_LABELS = {
-  care:"ケア", med:"服薬", meal:"食事", body:"身体", mood:"日記",
-  timeline:"履歴", stats:"統計", settings:"設定"
+  care:"ケア", med:"服薬", meal:"食事", body:"身体", life:"生活", mood:"日記",
+  timeline:"検索", stats:"統計", settings:"設定"
 };
 const DB_NAME = "daily-log";
-const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", skin:"skin_r", care:"care_r", body:"body_r", bodyC:"body_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
+const K = { bath:"bath_r", med:"med_r", medC:"med_c", meal:"meal_r", teeth:"teeth_r", teethC:"teeth_c", skin:"skin_r", care:"care_r", body:"body_r", bodyC:"body_c", life:"life_r", lifeC:"life_c", memo:"memo_r", mood:"mood_r", tagC:"tag_c", set:"app_s" };
 
 // ── IndexedDB ──────────────────────────────────────────────
 let _db = null;
@@ -294,6 +297,20 @@ function periodStats(bodyR){
   const next=lastStart&&avgCycle?addD(lastStart,avgCycle):null;
   return{starts,avgCycle,avgLen,lastStart,next,cycleCount:diffs.length};
 }
+function defaultLifeConf(){
+  return{items:[
+    {id:"out",  label:"外出",   color:"#aadbd2", rated:false, subs:["公共交通機関","付き添いあり","役所"]},
+    {id:"shop", label:"買い物", color:"#f5e6b0", rated:false, subs:["スーパー","コンビニ","徒歩","自転車","車","公共交通機関","付き添いあり"]},
+    {id:"house",label:"家事",   color:"#d8c8ec", rated:true,  subs:["料理","食器洗い","洗濯","洗濯干し","片付け"]},
+  ]};
+}
+// 旧形式（{out:{subs},shop:{subs},house:{subs}}）からの移行
+function normLifeConf(lfc){
+  if(!lfc)return defaultLifeConf();
+  if(Array.isArray(lfc.items))return lfc;
+  const def=defaultLifeConf();
+  return{items:def.items.map(d=>({...d,subs:lfc[d.id]?.subs??d.subs}))};
+}
 function normCare(v){
   if(v==null)return{};
   if(typeof v==="number")return{r:v===1?1:v+1};
@@ -325,6 +342,7 @@ function CareTab({careR,onCare,dateNav}) {
     {key:"bath", label:"入浴",       color:CAT.bath.color},
     {key:"teeth",label:"歯磨き",     color:CAT.teeth.color},
     {key:"skin", label:"スキンケア", color:CAT.skin.color},
+    {key:"dress",label:"着替え",     color:CAT.dress.color},
   ];
   const day=careR[curDate]||{};
   const patchCat=(key,p)=>{
@@ -376,8 +394,74 @@ function CareMemo({memo,onChange}) {
   );
 }
 
+// ── 月経カレンダー（身体タブ用）───────────────────
+function PeriodCalendar({month,bodyR}) {
+  // 月移動（身体タブの日付とは独立）
+  const[ym,setYm]=useState(month);
+  const shift=d=>{const[y,m]=ym.split("-").map(Number);const t=new Date(y,m-1+d,1);setYm(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`);};
+  const[y,m]=ym.split("-");
+  const fd=new Date(+y,+m-1,1).getDay();
+  const dim=dimY(y,m);
+  const today=todayKey();
+  // 予測日（次回開始から平均期間ぶん、以降の周期も先まで展開）
+  const predicted=new Set();
+  const st=periodStats(bodyR);
+  if(st?.next&&st?.avgCycle){
+    const len=Math.max(1,Math.round(st.avgLen||5));
+    for(let k=0;k<24;k++){
+      const start=addD(st.next,k*st.avgCycle);
+      for(let d=0;d<len;d++){
+        const ds=addD(start,d);
+        if(ds.startsWith(`${y}-${m}`))predicted.add(ds);
+      }
+      if(start>`${y}-${m}-31`)break;
+    }
+  }
+  const cells=[];
+  for(let i=0;i<fd;i++)cells.push(null);
+  for(let d=1;d<=dim;d++)cells.push(d);
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:6}}>
+        <button onClick={()=>shift(-1)} style={{border:"none",background:"rgba(0,0,0,0.04)",borderRadius:10,width:26,height:22,fontSize:11,color:"rgba(0,0,0,0.45)",cursor:"pointer",fontFamily:"inherit"}}>‹</button>
+        <p style={{fontSize:10,color:"rgba(0,0,0,0.38)",fontWeight:600,minWidth:56,textAlign:"center"}}>{+y}年{+m}月</p>
+        <button onClick={()=>shift(1)} style={{border:"none",background:"rgba(0,0,0,0.04)",borderRadius:10,width:26,height:22,fontSize:11,color:"rgba(0,0,0,0.45)",cursor:"pointer",fontFamily:"inherit"}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:4}}>
+        {["日","月","火","水","木","金","土"].map((d,i)=>(
+          <div key={i} style={{textAlign:"center",fontSize:9,color:i===0?"rgba(200,50,50,0.55)":i===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.3)",paddingBottom:2}}>{d}</div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px 0"}}>
+        {cells.map((day,i)=>{
+          if(!day)return<div key={i} style={{height:28}}/>;
+          const ds=padDate(y,+m,day);
+          const period=!!bodyR?.[ds]?.period;
+          const pred=!period&&ds>=today&&predicted.has(ds);
+          const isToday=ds===today,isFuture=ds>today;
+          const dow=(fd+day-1)%7;
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",height:28,paddingTop:1}}>
+              <div style={{width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",flexShrink:0,background:"transparent"}}>
+                <span style={{fontSize:10,lineHeight:1,fontWeight:isToday?700:400,color:isFuture?"rgba(0,0,0,0.15)":dow===0?"rgba(200,50,50,0.55)":dow===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.55)"}}>{day}</span>
+              </div>
+              {(period||pred)&&(
+                <div style={{display:"flex",gap:2,marginTop:1}}>
+                  <div style={{width:4,height:4,borderRadius:"50%",background:period?CAT.period.color:"#d5d5d5"}}/>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.period.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>月経</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:"#d5d5d5"}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>予測</span></div>
+      </div>
+    </div>
+  );
+}
 // ── 身体タブ（体重・BMI・月経）───────────────────
-// 記録: bodyR = {date:{weight:kg, period:true}} / 設定: bodyC = {height:cm}
 function BodyTab({records,conf,onUpdate,dateNav}) {
   const realToday=todayKey();
   const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
@@ -449,6 +533,91 @@ function BodyTab({records,conf,onUpdate,dateNav}) {
           </button>
         </div>
       </div></div>
+      {/* 月経カレンダー */}
+      <div style={card}><div style={{padding:"12px 16px"}}>
+        <PeriodCalendar month={curDate.slice(0,7)} bodyR={records}/>
+      </div></div>
+    </div>
+  );
+}
+
+// ── 生活タブ（外出・買い物）───────────────────
+// 記録: lifeR = {date:{out:{on:true,subs:["役所"]},shop:{...}}} / 設定: lifeC = {out:{subs:[...]},shop:{subs:[...]}}
+function LifeTab({records,conf,onUpdate,dateNav}) {
+  const realToday=todayKey();
+  const{curDate,prevDay,nextDay,goTo,goToday}=dateNav;
+  const day=records[curDate]||{};
+  const patchItem=(key,p)=>{
+    const nx=JSON.parse(JSON.stringify(records));
+    const cur=(nx[curDate]||{})[key]||{};
+    const next={...cur,...p};
+    if(!next.on)delete next.on;
+    if(!next.subs||!next.subs.length)delete next.subs;
+    if(next.r==null)delete next.r;
+    if(!(next.memo||"").trim())delete next.memo;
+    if(!nx[curDate])nx[curDate]={};
+    if(Object.keys(next).length)nx[curDate][key]=next;else delete nx[curDate][key];
+    if(!Object.keys(nx[curDate]).length)delete nx[curDate];
+    onUpdate(nx);
+  };
+  return(
+    <div style={{width:"100%",maxWidth:380}}>
+      <DateNav curDate={curDate} realToday={realToday} onPrev={prevDay} onNext={nextDay} onGoTo={goTo} onToday={goToday}/>
+      {(conf?.items||[]).map(item=>{
+        const rec=day[item.id]||{};
+        const on=!!rec.on;
+        const subs=rec.subs||[];
+        const rating=rec.r??null;
+        const active=on||subs.length>0||rating!=null||(rec.memo||"").trim();
+        const options=item.subs||[];
+        const toggleSub=name=>{
+          const has=subs.includes(name);
+          const nxSubs=has?subs.filter(s=>s!==name):[...subs,name];
+          patchItem(item.id,{subs:nxSubs,...(item.rated?{}:{on:on||nxSubs.length>0?true:on})});
+        };
+        return(
+          <div key={item.id} style={card}><div style={{padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:4,height:20,borderRadius:2,background:active?item.color:"rgba(0,0,0,0.08)",flexShrink:0}}/>
+              <span style={{fontSize:14,fontWeight:600,color:"rgba(0,0,0,0.65)"}}>{item.label}</span>
+              {!item.rated&&active&&<span style={{fontSize:12,fontWeight:400,color:"rgba(0,0,0,0.4)"}}>あり</span>}
+              <div style={{flex:1}}/>
+              {!item.rated&&(
+                <button onClick={()=>patchItem(item.id,{on:on?null:true,...(on?{subs:[]}:{})})}
+                  style={{background:on?hexA(item.color,0.8):"rgba(0,0,0,0.06)",border:"none",borderRadius:20,padding:"6px 18px",fontSize:12,fontWeight:600,
+                    color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)",cursor:"pointer",fontFamily:"inherit"}}>
+                  あり
+                </button>
+              )}
+            </div>
+            {/* 家事のみ：4段階評価（ケアと同形式） */}
+            {item.rated&&(
+              <div style={{display:"flex",gap:4,marginTop:10}}>
+                {CARE_RATING_LABELS.map((lb,i)=>{const n=i+1;const sel=rating===n;return(
+                  <button key={n} onClick={()=>patchItem(item.id,{r:sel?null:n})} aria-label={lb}
+                    style={{flex:1,padding:"7px 0",border:"none",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      background:sel?item.color:"rgba(0,0,0,0.06)",color:sel?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.3)"}}>
+                    <CareMark n={n} on={sel}/>
+                  </button>
+                );})}
+              </div>
+            )}
+            {options.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10,paddingLeft:16}}>
+                {options.map(name=>{const sel=subs.includes(name);return(
+                  <button key={name} onClick={()=>toggleSub(name)}
+                    style={{border:"none",borderRadius:14,padding:"5px 11px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                      background:sel?hexA(item.color,0.8):"rgba(0,0,0,0.06)",color:sel?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+                    {name}
+                  </button>
+                );})}
+              </div>
+            )}
+            <CareMemo key={item.id+curDate} memo={rec.memo} onChange={m=>patchItem(item.id,{memo:m})}/>
+          </div></div>
+        );
+      })}
     </div>
   );
 }
@@ -822,10 +991,23 @@ function DiaryField({value,onChange}) {
 }
 
 // ── 履歴（旧タイムライン）+ 検索 ─────────────────────────
-function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,memoR,moodR,tagConf,teethConf}) {
+function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,lifeR,lifeC,memoR,moodR,tagConf,teethConf}) {
+  // 絞り込み（カテゴリ・タグ）
+  const[catSel,setCatSel]=useState({});
+  const[tagSel,setTagSel]=useState({});
+  const toggleCat=k=>setCatSel(s=>({...s,[k]:!s[k]}));
+  const toggleTag=n=>setTagSel(s=>({...s,[n]:!s[n]}));
+  const catKeys=Object.keys(catSel).filter(k=>catSel[k]);
+  const tagKeys=Object.keys(tagSel).filter(k=>tagSel[k]);
+  const SEARCH_CATS=[
+    {key:"meal",label:"食事"},{key:"med",label:"服薬"},{key:"care",label:"ケア"},{key:"body",label:"身体"},
+    {key:"life",label:"生活"},{key:"mood",label:"日記"},
+  ];
+  const CATMAP={mood:"mood",memo:"mood",body:"body",bath:"care",teeth:"care",skin:"care",dress:"care",meal:"meal",med:"med",life:"life"};
   const[search,setSearch]=useState("");
   const q=search.trim().toLowerCase();
-  const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
+  const hasFilter=q.length>0||catKeys.length>0||tagKeys.length>0;
+  const allKeys=[...new Set([...Object.keys(bathR),...Object.keys(medR),...Object.keys(mealR),...Object.keys(teethR),...Object.keys(skinR||{}),...Object.keys(careR||{}),...Object.keys(bodyR||{}),...Object.keys(lifeR||{}),...Object.keys(memoR),...Object.keys(moodR)])].sort((a,b)=>b.localeCompare(a));
   const today=todayKey();
   const sortT=(a,b)=>!a.t&&!b.t?0:!a.t?1:!b.t?-1:a.t.localeCompare(b.t);
   // 日付文字列が検索語にマッチするか（複数表記に対応）
@@ -860,8 +1042,31 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,me
           {search&&<button onClick={()=>setSearch("")} style={icoBtn}>✕</button>}
         </div>
       </div>
+      {/* 候補：カテゴリ */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8,justifyContent:"center"}}>
+        {SEARCH_CATS.map(sc=>{const on=!!catSel[sc.key];return(
+          <button key={sc.key} onClick={()=>toggleCat(sc.key)}
+            style={{border:"none",borderRadius:14,padding:"5px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+              background:on?"rgba(0,0,0,0.1)":"rgba(0,0,0,0.04)",color:on?"rgba(0,0,0,0.65)":"rgba(0,0,0,0.4)"}}>
+            {sc.label}
+          </button>
+        );})}
+      </div>
+      {/* 候補：出来事タグ */}
+      {(tagConf?.tags||[]).length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10,justifyContent:"center"}}>
+          {(tagConf?.tags||[]).map(t=>{const on=!!tagSel[t.name];return(
+            <button key={t.id} onClick={()=>toggleTag(t.name)}
+              style={{border:"none",borderRadius:14,padding:"5px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                background:on?hexA(t.color||"#dddddd",0.8):"rgba(0,0,0,0.04)",color:on?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.4)"}}>
+              {t.name}
+            </button>
+          );})}
+        </div>
+      )}
       {allKeys.length===0&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:32}}>まだ記録がありません</p>}
-      {allKeys.map(ds=>{
+      {!hasFilter&&allKeys.length>0&&<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",marginTop:32,lineHeight:1.8}}>タブやタグを選ぶか、キーワードを入力すると<br/>記録を検索できます</p>}
+      {hasFilter&&allKeys.map(ds=>{
         dayHit=dateMatches(ds);
         const bath=bathR[ds]||[],med=medR[ds]||{},meal=mealR[ds]||[],teeth=teethR[ds],memo=memoR[ds]||[],mood=moodR[ds]||null;
         const wd=dateWd(ds);
@@ -883,6 +1088,7 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,me
           ...(Array.isArray(skin)?skin:[]).map(e=>({t:e.time,label:"スキンケア",color:CAT.skin.color,sub:""})),
           ...(rl("skin")?[{t:null,label:"スキンケア",color:CAT.skin.color,sub:rl("skin")}]:[]),
         ].filter(matchQ).sort(sortT);
+        const dressItems=(rl("dress")?[{t:null,label:"着替え",color:CAT.dress.color,sub:rl("dress")}]:[]).filter(matchQ);
         const mealItems=meal.map(e=>{const c=MEAL_COLORS[e.category]||MEAL_COLORS["その他"];return{t:e.time,label:e.category,color:c.color,sub:[e.calories?`${e.calories}kcal`:null,e.memo].filter(Boolean).join(" ")};}).filter(matchQ).sort(sortT);
         const medItems=[];
         aS.forEach(s=>{if(med[s.id])medItems.push({t:med[s.id],label:`服薬 ${s.label}`,color:s.color,sub:(med.__names&&med.__names[s.id]?med.__names[s.id]:(medConf.slots[s.id]?.meds||[]).map(m=>m.name||m)).join("/")});});
@@ -910,15 +1116,38 @@ function TimelineTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,bodyC,me
         }
         if(body.period)bodyItems.push({t:null,label:"月経",color:CAT.period.color,sub:"あり"});
         const filteredBody=bodyItems.filter(matchQ);
-        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"body",items:filteredBody},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"skin",items:skinItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
-        if(!groups.length)return null;
+        const life=lifeR?.[ds]||{};
+        const lifeItems=[];
+        (lifeC?.items||[]).forEach(li=>{
+          const r=life[li.id];
+          if(!r)return;
+          if(r.on||r.subs?.length||r.r!=null||(r.memo||"").trim()){
+            const parts=[
+              r.r!=null?CARE_RATING_LABELS[r.r-1]:null,
+              (r.subs||[]).join("・")||null,
+              (r.memo||"").trim()||null,
+            ].filter(Boolean);
+            lifeItems.push({t:null,label:li.label,color:li.color,sub:parts.join(" ")||"あり"});
+          }
+        });
+        const filteredLife=lifeItems.filter(matchQ);
+        const groups=[{key:"mood",items:filteredMood},{key:"memo",items:memoItems},{key:"body",items:filteredBody},{key:"life",items:filteredLife},{key:"bath",items:bathItems},{key:"teeth",items:teethItems},{key:"skin",items:skinItems},{key:"dress",items:dressItems},{key:"meal",items:mealItems},{key:"med",items:filteredMed}].filter(g=>g.items.length>0);
+        // カテゴリ・タグの絞り込み
+        const groupsF=(catKeys.length||tagKeys.length)
+          ?groups.map(g=>({...g,items:g.items.filter(it=>{
+              if(catKeys.includes(CATMAP[g.key]))return true;
+              if(tagKeys.length&&g.key==="mood"&&it.label==="タグ")return tagKeys.some(n=>(it.sub||"").includes(n));
+              return false;
+            })})).filter(g=>g.items.length>0)
+          :groups;
+        if(!groupsF.length)return null;
         return(
           <div key={ds} style={card}><div style={{padding:"12px 16px"}}>
             <p style={{fontSize:12,fontWeight:700,color:"rgba(0,0,0,0.55)",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
               {fmtDate(ds)}
               {ds===today&&<span style={{fontSize:10,fontWeight:600,background:"rgba(0,0,0,0.06)",color:"rgba(0,0,0,0.35)",borderRadius:6,padding:"1px 6px"}}>今日</span>}
             </p>
-            {groups.map((g,gi)=>(
+            {groupsF.map((g,gi)=>(
               <div key={g.key}>
                 {gi>0&&<div style={{borderTop:"1px solid rgba(0,0,0,0.06)",margin:"6px 0"}}/>}
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -968,6 +1197,7 @@ function MonthCalendar({month,bathR,teethR,skinR,careR}) {
           const bath=bathR[ds]?.length>0||done("bath");
           const teeth=(Array.isArray(teethR[ds])&&teethR[ds].length>0)||done("teeth");
           const skin=(Array.isArray(skinR?.[ds])&&skinR[ds].length>0)||done("skin");
+          const dress=done("dress");
           const isToday=ds===today,isFuture=ds>today;
           const dow=(fd+day-1)%7;
           return(
@@ -975,11 +1205,12 @@ function MonthCalendar({month,bathR,teethR,skinR,careR}) {
               <div style={{width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",flexShrink:0,background:"transparent"}}>
                 <span style={{fontSize:10,lineHeight:1,fontWeight:isToday?700:400,color:isFuture?"rgba(0,0,0,0.15)":dow===0?"rgba(200,50,50,0.55)":dow===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.55)"}}>{day}</span>
               </div>
-              {!isFuture&&(bath||teeth||skin)&&(
+              {!isFuture&&(bath||teeth||skin||dress)&&(
                 <div style={{display:"flex",gap:2,marginTop:1}}>
                   {bath&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.bath.color}}/>}
                   {teeth&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.teeth.color}}/>}
                   {skin&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.skin.color}}/>}
+                  {dress&&<div style={{width:4,height:4,borderRadius:"50%",background:CAT.dress.color}}/>}
                 </div>
               )}
             </div>
@@ -990,6 +1221,7 @@ function MonthCalendar({month,bathR,teethR,skinR,careR}) {
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.bath.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>入浴</span></div>
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.teeth.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>歯磨き</span></div>
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.skin.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>スキンケア</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT.dress.color}}/><span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>着替え</span></div>
       </div>
     </div>
   );
@@ -1079,17 +1311,20 @@ function DailyCalChart({records,month}) {
 }
 
 // ── 統計タブ ──────────────────────────────────────────────
-function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,moodR}) {
+function StatsTab({bathR,medR,medConf,mealR,teethR,skinR,careR,bodyR,lifeR,lifeC,moodR,tabOrder}) {
   const curMonth=todayKey().slice(0,7);const[month,setMonth]=useState(curMonth);
   const prev=()=>setMonth(addMonths(month,-1));
   const next=()=>{const n=addMonths(month,1);if(n<=curMonth)setMonth(n);};
   return(
     <div style={{width:"100%",maxWidth:380}}>
       <MonthNav month={month} maxMonth={curMonth} onPrev={prev} onNext={next} onPick={setMonth}/>
-      <p style={secLbl}>受診用サマリー</p>
-      <div style={card}><div style={{padding:"14px 16px"}}><ClinicSummary month={month} medR={medR} medConf={medConf} moodR={moodR} bathR={bathR} teethR={teethR} skinR={skinR} careR={careR} mealR={mealR}/></div></div>
+      <p style={secLbl}>月別サマリー</p>
+      <div style={card}><div style={{padding:"14px 16px"}}><ClinicSummary month={month} medR={medR} medConf={medConf} moodR={moodR} bathR={bathR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} lifeR={lifeR} lifeC={lifeC} mealR={mealR} tabOrder={tabOrder}/></div></div>
       <p style={{...secLbl,marginTop:8}}>ケア</p>
       <div style={card}><div style={{padding:"12px 16px"}}><MonthCalendar month={month} bathR={bathR} teethR={teethR} skinR={skinR} careR={careR}/></div></div>
+
+      <p style={{...secLbl,marginTop:8}}>生活</p>
+      <div style={card}><div style={{padding:"12px 16px"}}><LifeCalendar month={month} lifeR={lifeR} lifeC={lifeC}/></div></div>
       <p style={{...secLbl,marginTop:8}}>服薬の時間帯</p>
       <div style={card}><div style={{padding:"12px 16px"}}><MedTimingChart records={medR} config={medConf} month={month}/></div></div>
       <p style={{...secLbl,marginTop:8}}>食事カロリー</p>
@@ -1207,8 +1442,64 @@ function PeriodSummary({bodyR}) {
 
 
 
-// ── 統計：受診用サマリー ──────────────────────────────────
-function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}) {
+// ── 統計：生活カレンダー ──────────────────────────────────
+// 4段階評価の項目は ✕ 以外（△○◎）を「あり」として点を付ける
+function LifeCalendar({month,lifeR,lifeC}) {
+  const[y,m]=month.split("-");
+  const fd=new Date(+y,+m-1,1).getDay();
+  const dim=dimY(y,m);
+  const today=todayKey();
+  const items=lifeC?.items||[];
+  const doneItem=(r,it)=>{
+    if(!r)return false;
+    if(it.rated)return r.r!=null&&r.r>=2;
+    return !!(r.on||r.subs?.length||(r.memo||"").trim());
+  };
+  const cells=[];
+  for(let i=0;i<fd;i++)cells.push(null);
+  for(let d=1;d<=dim;d++)cells.push(d);
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:4}}>
+        {["日","月","火","水","木","金","土"].map((d,i)=>(
+          <div key={i} style={{textAlign:"center",fontSize:9,color:i===0?"rgba(200,50,50,0.55)":i===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.3)",paddingBottom:2}}>{d}</div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px 0"}}>
+        {cells.map((day,i)=>{
+          if(!day)return<div key={i} style={{height:28}}/>;
+          const ds=padDate(y,+m,day);
+          const dayRec=lifeR?.[ds]||{};
+          const marks=items.filter(it=>doneItem(dayRec[it.id],it));
+          const isToday=ds===today,isFuture=ds>today;
+          const dow=(fd+day-1)%7;
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",height:28,paddingTop:1}}>
+              <div style={{width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",flexShrink:0,background:"transparent"}}>
+                <span style={{fontSize:10,lineHeight:1,fontWeight:isToday?700:400,color:isFuture?"rgba(0,0,0,0.15)":dow===0?"rgba(200,50,50,0.55)":dow===6?"rgba(50,100,200,0.45)":"rgba(0,0,0,0.55)"}}>{day}</span>
+              </div>
+              {!isFuture&&marks.length>0&&(
+                <div style={{display:"flex",gap:2,marginTop:1}}>
+                  {marks.map(it=><div key={it.id} style={{width:4,height:4,borderRadius:"50%",background:it.color||"#dddddd"}}/>)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center",flexWrap:"wrap"}}>
+        {items.map(it=>(
+          <div key={it.id} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:it.color||"#dddddd"}}/>
+            <span style={{fontSize:10,color:"rgba(0,0,0,0.4)"}}>{it.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+// ── 統計：月別サマリー ──────────────────────────────────
+function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,bodyR,lifeR,lifeC,mealR,tabOrder}) {
   const[y,m]=month.split("-");const dim=dimY(y,m);const today=todayKey();
   // 対象日数（未来は除く）
   let daysInScope=0;
@@ -1260,59 +1551,117 @@ function ClinicSummary({month,medR,medConf,moodR,bathR,teethR,skinR,careR,mealR}
     </div>
   );
 
-  return(
-    <div>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",marginBottom:6}}>服薬</p>
+  // ── セクション（タブの並び順で表示）──
+  const sections={
+    meal:(()=>{
+      let calSum=0,calDays=0;
+      for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+        const meals=Array.isArray(mealR?.[ds])?mealR[ds]:[];
+        const dayCal=meals.reduce((s,e)=>s+(e.calories||0),0);
+        if(dayCal>0){calSum+=dayCal;calDays++;}
+      }
+      if(!calDays)return null;
+      return(<>
+        <Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>
+      </>);
+    })(),
+    med:(slotStats.length||weeklyStats.length||prnCount>0||prnNoteDays>0)?(<>
       {slotStats.map(s=><Row key={s.label} label={s.label} color={s.color} right={`${s.taken}/${s.total}日（${s.pct}%）`}/>)}
       {weeklyStats.map(w=><Row key={w.label} label={w.label} color={w.color} right={`${w.taken}/${w.total}回（${w.pct}%）`}/>)}
       {(prnCount>0||prnNoteDays>0)&&(
         <Row label="頓服" color="#f5e6b0" right={prnCount>0?`${prnCount}回${prnNoteDays>0?`（メモ${prnNoteDays}日）`:""}`:`メモ${prnNoteDays}日`}/>
       )}
-      {fieldStats.length>0&&<>
-        <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>気分・体調・睡眠</p>
-        {fieldStats.map(f=>(
-          <Row key={f.label} label={`${f.label}（記録${f.n}日）`}
-            right={`平均 ${f.avgLabel}・悪い日 ${f.low}日`}/>
+    </>):null,
+    care:(()=>{
+      const careCats=[
+        {key:"bath", label:"入浴",       color:CAT.bath.color},
+        {key:"teeth",label:"歯磨き",     color:CAT.teeth.color},
+        {key:"skin", label:"スキンケア", color:CAT.skin.color},
+        {key:"dress",label:"着替え",     color:CAT.dress.color},
+      ];
+      const careStats=careCats.map(cc=>{
+        const vals=[];
+        for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+          const o=normCare(careR?.[ds]?.[cc.key]);if(o.r!=null)vals.push(o.r);}
+        if(!vals.length)return null;
+        const avg=vals.reduce((s,v)=>s+v,0)/vals.length;
+        const avgN=Math.min(4,Math.max(1,Math.round(avg)));
+        const low=vals.filter(v=>v===1).length;
+        return{...cc,n:vals.length,avgN,low};
+      }).filter(Boolean);
+      if(!careStats.length)return null;
+      return(<>
+        {careStats.map(cs=>(
+          <Row key={cs.key} label={`${cs.label}（記録${cs.n}日）`} color={cs.color}
+            right={<>平均 <CareMark n={cs.avgN} size={12} op={0.55} inline/>・できなかった日 {cs.low}日</>}/>
         ))}
-      </>}
-      {(()=>{
-        // ── 生活：入浴・歯磨き・スキンケアの平均評価（気分・体調・睡眠と同形式）、平均カロリー ──
-        const careCats=[
-          {key:"bath", label:"入浴",       color:CAT.bath.color},
-          {key:"teeth",label:"歯磨き",     color:CAT.teeth.color},
-          {key:"skin", label:"スキンケア", color:CAT.skin.color},
-        ];
-        const careStats=careCats.map(cc=>{
-          const vals=[];
-          for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
-            const o=normCare(careR?.[ds]?.[cc.key]);if(o.r!=null)vals.push(o.r);}
-          if(!vals.length)return null;
+      </>);
+    })(),
+    body:(()=>{
+      const ws=[];let periodDays=0;
+      for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+        const r=bodyR?.[ds];if(!r)continue;
+        if(r.weight!=null)ws.push(r.weight);
+        if(r.period)periodDays++;
+      }
+      if(!ws.length&&!periodDays)return null;
+      return(<>
+        {ws.length>0&&<Row label={`体重（記録${ws.length}日）`} color={CAT.weight.color}
+          right={`平均 ${(Math.round(ws.reduce((s,v)=>s+v,0)/ws.length*10)/10).toFixed(1)}kg`}/>}
+        {periodDays>0&&<Row label="月経" color={CAT.period.color} right={`${periodDays}日`}/>}
+      </>);
+    })(),
+    life:(()=>{
+      const rows=(lifeC?.items||[]).map(it=>{
+        let days=0;const vals=[];
+        for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
+          const r=lifeR?.[ds]?.[it.id];if(!r)continue;
+          const has=r.on||r.subs?.length||r.r!=null||(r.memo||"").trim();
+          if(has)days++;
+          if(r.r!=null)vals.push(r.r);
+        }
+        if(!days)return null;
+        if(it.rated&&vals.length){
           const avg=vals.reduce((s,v)=>s+v,0)/vals.length;
           const avgN=Math.min(4,Math.max(1,Math.round(avg)));
           const low=vals.filter(v=>v===1).length;
-          return{...cc,n:vals.length,avgN,low};
-        }).filter(Boolean);
-        let calSum=0,calDays=0;
-        for(let d=1;d<=dim;d++){const ds=padDate(y,+m,d);if(ds>today)continue;
-          const meals=Array.isArray(mealR?.[ds])?mealR[ds]:[];
-          const dayCal=meals.reduce((s,e)=>s+(e.calories||0),0);
-          if(dayCal>0){calSum+=dayCal;calDays++;}
+          return{id:it.id,label:`${it.label}（記録${vals.length}日）`,color:it.color,rated:true,avgN,low};
         }
-        if(careStats.length===0&&calDays===0)return null;
-        return(<>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:"12px 0 6px"}}>生活</p>
-          {careStats.map(cs=>(
-            <Row key={cs.key} label={`${cs.label}（記録${cs.n}日）`} color={cs.color}
-              right={<>平均 <CareMark n={cs.avgN} size={12} op={0.55} inline/>・できなかった日 {cs.low}日</>}/>
-          ))}
-          {calDays>0&&<Row label={`カロリー（記録${calDays}日）`} color={MEAL_COLORS["朝食"].color} right={`平均 ${Math.round(calSum/calDays).toLocaleString()} kcal/日`}/>}
-        </>);
-      })()}
-      {fieldStats.length===0&&slotStats.every(s=>s.taken===0)&&prnCount===0&&(
-        <p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"8px 0"}}>この月の記録がありません</p>
-      )}
+        return{id:it.id,label:it.label,color:it.color,rated:false,days};
+      }).filter(Boolean);
+      if(!rows.length)return null;
+      return(<>
+        {rows.map(r=>(
+          <Row key={r.id} label={r.label} color={r.color}
+            right={r.rated
+              ?<>平均 <CareMark n={r.avgN} size={12} op={0.55} inline/>・できなかった日 {r.low}日</>
+              :`${r.days}日`}/>
+        ))}
+      </>);
+    })(),
+    mood:fieldStats.length>0?(<>
+      {fieldStats.map(f=>(
+        <Row key={f.label} label={`${f.label}（記録${f.n}日）`}
+          right={`平均 ${f.avgLabel}・悪い日 ${f.low}日`}/>
+      ))}
+    </>):null,
+  };
+  const SEC_LABELS={meal:"食事",med:"服薬",care:"ケア",body:"身体",life:"生活",mood:"気分・体調・睡眠"};
+  // 固定順：服薬 → 気分体調睡眠 → ケア → 生活 → 身体 → 食事
+  const order=["med","mood","care","life","body","meal"];
+  const visible=order.filter(k=>sections[k]);
+  if(!visible.length)return<p style={{fontSize:12,color:"rgba(0,0,0,0.3)",textAlign:"center",padding:"12px 0"}}>この月のデータはありません</p>;
+  return(
+    <div>
+      {visible.map((k,i)=>(
+        <div key={k}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(0,0,0,0.45)",margin:i===0?"0 0 6px":"12px 0 6px"}}>{SEC_LABELS[k]}</p>
+          {sections[k]}
+        </div>
+      ))}
     </div>
   );
+
 }
 
 // ── 統計：気分チャート（月／年トグル）─────────────────────
@@ -1429,6 +1778,14 @@ function MedSettingsSection({config,onConfigChange}) {
                       <input ref={editRef} defaultValue={med.name}
                         onKeyDown={e=>{if(e.key==="Enter")saveE(s.id,med.id,editRef.current?.value||"");}}
                         style={{...inp,marginBottom:10}}/>
+                      {(()=>{const i=meds.findIndex(m=>m.id===med.id);return(
+                        <div style={{display:"flex",gap:8,marginBottom:8}}>
+                          <button onMouseDown={e=>e.preventDefault()} onClick={()=>moveM(s.id,med.id,-1)} disabled={i===0}
+                            style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===0?0.4:1}}>上へ</button>
+                          <button onMouseDown={e=>e.preventDefault()} onClick={()=>moveM(s.id,med.id,1)} disabled={i===meds.length-1}
+                            style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===meds.length-1?0.4:1}}>下へ</button>
+                        </div>
+                      );})()}
                       <div style={{display:"flex",gap:8}}>
                         <button onMouseDown={e=>e.preventDefault()} onClick={()=>{delM(s.id,med.id);setEditingMed(null);}}
                           style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
@@ -1441,12 +1798,6 @@ function MedSettingsSection({config,onConfigChange}) {
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0"}}>
                       <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{med.name}</span>
-                      {(()=>{const i=meds.findIndex(m=>m.id===med.id);return(<>
-                        <button onClick={()=>moveM(s.id,med.id,-1)} disabled={i===0}
-                          style={{...smBtn(),fontSize:11,padding:"3px 8px",opacity:i===0?0.3:1}}>上へ</button>
-                        <button onClick={()=>moveM(s.id,med.id,1)} disabled={i===meds.length-1}
-                          style={{...smBtn(),fontSize:11,padding:"3px 8px",opacity:i===meds.length-1?0.3:1}}>下へ</button>
-                      </>);})()}
                       <button onClick={()=>setEditingMed({slotId:s.id,medId:med.id})} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
                     </div>
                   )}
@@ -1669,7 +2020,121 @@ function BodyBackfill({bodyR,onBodyUpdate}) {
     </div></div>
   );
 }
-function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,tagConf,onTagConfChange,bodyC,onBodyConfChange,bodyR,onBodyUpdate,allData,onImport,onDeleteAll,onBackedUp}) {
+// ── 生活の上位項目エディタ（設定 > 生活）──────────────
+function LifeItemsEditor({conf,onChange}) {
+  const items=conf?.items||[];
+  const[editId,setEditId]=useState(null);
+  const[editColor,setEditColor]=useState(null);
+  const[editRated,setEditRated]=useState(false);
+  const[nv,setNv]=useState("");
+  const editRef=useRef(null);
+  useEffect(()=>{if(editId&&editRef.current)editRef.current.focus();},[editId]);
+  const upd=nxItems=>onChange({...conf,items:nxItems});
+  const openEdit=it=>{setEditId(it.id);setEditColor(it.color||"#dddddd");setEditRated(!!it.rated);};
+  const add=()=>{const n=nv.trim();if(!n)return;upd([...items,{id:uid(),label:n,color:"#dddddd",rated:false,subs:[]}]);setNv("");};
+  const rem=id=>{upd(items.filter(it=>it.id!==id));setEditId(null);};
+  const saveEdit=id=>{
+    const n=(editRef.current?.value||"").trim();
+    upd(items.map(it=>it.id===id?{...it,...(n?{label:n}:{}),color:editColor||it.color,rated:editRated}:it));
+    setEditId(null);
+  };
+  const mv=(id,dir)=>{const i=items.findIndex(x=>x.id===id),j=i+dir;if(j<0||j>=items.length)return;const a=[...items];[a[i],a[j]]=[a[j],a[i]];upd(a);};
+  const setSubs=(id,subs)=>upd(items.map(it=>it.id===id?{...it,subs}:it));
+  return(<>
+    {items.map((it,idx)=>(
+      <div key={it.id} style={{...card,marginBottom:6}}>
+        {editId===it.id?(
+          <div style={{padding:"12px 16px"}}>
+            <input ref={editRef} type="text" defaultValue={it.label}
+              onKeyDown={e=>{if(e.key==="Enter")saveEdit(it.id);}}
+              style={{...inp,marginBottom:12}}/>
+            <button onClick={()=>setEditRated(r=>!r)}
+              style={{...smBtn(editRated?"#dddddd":"rgba(0,0,0,0.04)"),width:"100%",padding:"8px 0",fontSize:11,marginBottom:12,
+                color:editRated?"rgba(0,0,0,0.6)":"rgba(0,0,0,0.35)"}}>
+              4段階評価（✕△○◎）{editRated?"あり":"なし"}
+            </button>
+            <ColorPicker value={editColor} onPick={setEditColor}/>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>mv(it.id,-1)} disabled={idx===0}
+                style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===0?0.4:1}}>上へ</button>
+              <button onMouseDown={e=>e.preventDefault()} onClick={()=>mv(it.id,1)} disabled={idx===items.length-1}
+                style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:idx===items.length-1?0.4:1}}>下へ</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onMouseDown={e=>{e.preventDefault();rem(it.id);}} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+              <button onMouseDown={e=>{e.preventDefault();setEditId(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+              <button onMouseDown={e=>{e.preventDefault();saveEdit(it.id);}} style={{...smBtn(editColor||"#dddddd"),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+            </div>
+          </div>
+        ):(
+          <div style={{padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <div style={{width:4,height:16,borderRadius:2,background:it.color||"#dddddd",flexShrink:0}}/>
+              <span style={{flex:1,fontSize:13,fontWeight:600,color:"rgba(0,0,0,0.6)"}}>{it.label}</span>
+              {it.rated&&<span style={{fontSize:10,color:"rgba(0,0,0,0.35)"}}>4段階評価</span>}
+              <button onClick={()=>openEdit(it)} style={{...smBtn(),fontSize:11,padding:"3px 8px"}}>編集</button>
+            </div>
+            <LifeSubEditor subs={it.subs||[]} onChange={s=>setSubs(it.id,s)}/>
+          </div>
+        )}
+      </div>
+    ))}
+    <div style={{...card,marginBottom:6}}><div style={{padding:"12px 16px",display:"flex",gap:8}}>
+      <input type="text" value={nv} onChange={e=>setNv(e.target.value)} placeholder="項目を追加…"
+        onKeyDown={e=>{if(e.key==="Enter")add();}} style={{...inp,flex:1}}/>
+      <button onClick={add} style={smBtn("#dddddd")}>追加</button>
+    </div></div>
+  </>);
+}
+// ── 生活の下位項目エディタ（設定 > 生活）──────────────
+function LifeSubEditor({subs,onChange}) {
+  const[nv,setNv]=useState("");
+  const[editIdx,setEditIdx]=useState(null);
+  const editRef=useRef(null);
+  useEffect(()=>{if(editIdx!=null&&editRef.current)editRef.current.focus();},[editIdx]);
+  const add=()=>{const n=nv.trim();if(!n||subs.includes(n))return;onChange([...subs,n]);setNv("");};
+  const rem=i=>{onChange(subs.filter((_,x)=>x!==i));setEditIdx(null);};
+  const save=i=>{const n=(editRef.current?.value||"").trim();if(n)onChange(subs.map((s,x)=>x===i?n:s));setEditIdx(null);};
+  const mv=(i,dir)=>{const j=i+dir;if(j<0||j>=subs.length)return;const a=[...subs];[a[i],a[j]]=[a[j],a[i]];onChange(a);};
+  return(
+    <div style={{marginBottom:14}}>
+      {subs.map((s,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0"}}>
+          {editIdx===i?(
+            <div style={{flex:1,padding:"5px 0 10px"}}>
+              <input ref={editRef} type="text" defaultValue={s}
+                onKeyDown={e=>{if(e.key==="Enter")save(i);}}
+                style={{...inp,marginBottom:10}}/>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <button onMouseDown={e=>e.preventDefault()} onClick={()=>mv(i,-1)} disabled={i===0}
+                  style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===0?0.4:1}}>上へ</button>
+                <button onMouseDown={e=>e.preventDefault()} onClick={()=>mv(i,1)} disabled={i===subs.length-1}
+                  style={{...smBtn(),flex:1,padding:"8px 0",fontSize:11,opacity:i===subs.length-1?0.4:1}}>下へ</button>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onMouseDown={e=>{e.preventDefault();rem(i);}} style={{...smBtn("rgba(0,0,0,0.05)"),fontSize:11,color:"rgba(0,0,0,0.35)",padding:"9px 10px"}}>削除</button>
+                <button onMouseDown={e=>{e.preventDefault();setEditIdx(null);}} style={{...smBtn(),flex:1,padding:"9px 0",fontSize:11}}>キャンセル</button>
+                <button onMouseDown={e=>{e.preventDefault();save(i);}} style={{...smBtn("#dddddd"),flex:2,padding:"9px 0",fontSize:11,fontWeight:700}}>保存</button>
+              </div>
+            </div>
+          ):(
+            <>
+              <span style={{flex:1,fontSize:12,color:"rgba(0,0,0,0.6)"}}>{s}</span>
+              <button onClick={()=>setEditIdx(i)} style={{...smBtn(),fontSize:10}}>編集</button>
+            </>
+          )}
+        </div>
+      ))}
+      <div style={{display:"flex",gap:6,marginTop:4}}>
+        <input type="text" value={nv} onChange={e=>setNv(e.target.value)} placeholder="項目を追加"
+          onKeyDown={e=>{if(e.key==="Enter")add();}}
+          style={{flex:1,border:"none",background:"rgba(0,0,0,0.04)",borderRadius:8,padding:"5px 8px",fontSize:12,color:"rgba(0,0,0,0.6)",outline:"none",fontFamily:"inherit"}}/>
+        <button onClick={add} style={smBtn("#dddddd")}>追加</button>
+      </div>
+    </div>
+  );
+}
+function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medConfig,onMedConfigChange,tagConf,onTagConfChange,bodyC,onBodyConfChange,bodyR,onBodyUpdate,lifeC,onLifeConfChange,allData,onImport,onDeleteAll,onBackedUp}) {
   const[confirmDel,setConfirmDel]=useState(false);
   const[tabEditId,setTabEditId]=useState(null);
   const mvTab=(i,dir)=>{const a=[...tabOrder],j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];onTabOrderChange(a);};
@@ -1713,6 +2178,9 @@ function SettingsTab({tabOrder,onTabOrderChange,hiddenTabs,onToggleHidden,medCon
         </div>
       </div></div>
       <BodyBackfill bodyR={bodyR} onBodyUpdate={onBodyUpdate}/>
+
+      <p style={{...secLbl,marginTop:12}}>生活</p>
+      <LifeItemsEditor conf={lifeC} onChange={onLifeConfChange}/>
       <p style={{...secLbl,marginTop:12}}>服薬設定</p>
       <MedSettingsSection config={medConfig} onConfigChange={onMedConfigChange}/>
       <p style={{...secLbl,marginTop:12}}>頓服プリセット</p>
@@ -1745,6 +2213,8 @@ function App() {
   const[careR,    setCareR]    =useState({});
   const[bodyR,    setBodyR]    =useState({});
   const[bodyC,    setBodyC]    =useState({});
+  const[lifeR,    setLifeR]    =useState({});
+  const[lifeC,    setLifeC]    =useState(defaultLifeConf());
   const[teethConf,setTeethConf]=useState(defaultTeethConf);
   const[memoR,    setMemoR]    =useState({});
   const[moodR,    setMoodR]    =useState({});
@@ -1761,15 +2231,15 @@ function App() {
   useEffect(()=>{
     (async()=>{
       await migrateMed();
-      const[br,mr,mc,mlr,tr,tc,skr,cr,bdr,bdc,mmr,mdr,tgc,as_]=await Promise.all([
+      const[br,mr,mc,mlr,tr,tc,skr,cr,bdr,bdc,lfr,lfc,mmr,mdr,tgc,as_]=await Promise.all([
         dbGet(K.bath),dbGet(K.med),dbGet(K.medC),
-        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.skin),dbGet(K.care),dbGet(K.body),dbGet(K.bodyC),dbGet(K.memo),
+        dbGet(K.meal),dbGet(K.teeth),dbGet(K.teethC),dbGet(K.skin),dbGet(K.care),dbGet(K.body),dbGet(K.bodyC),dbGet(K.life),dbGet(K.lifeC),dbGet(K.memo),
         dbGet(K.mood),dbGet(K.tagC),dbGet(K.set),
       ]);
       let conf=mc||defaultMedConf();const def=defaultMedConf();
       conf={...def,...conf,slots:{...def.slots,...conf.slots}};
       for(const sid of Object.keys(conf.slots))conf.slots[sid].meds=(conf.slots[sid].meds||[]).map(normMed);
-      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setSkinR(skr||{});setCareR(cr||{});setBodyR(bdr||{});setBodyC(bdc||{});setMemoR(mmr||{});setMoodR(mdr||{});
+      setBathR(br||{});setMedR(mr||{});setMedC(conf);setMealR(mlr||{});setTeethR(tr||{});setSkinR(skr||{});setCareR(cr||{});setBodyR(bdr||{});setBodyC(bdc||{});setLifeR(lfr||{});setLifeC(normLifeConf(lfc));setMemoR(mmr||{});setMoodR(mdr||{});
       if(tc)setTeethConf(tc);
       if(tgc)setTagConf(tgc);
       // 旧タブ名の移行: bath/teeth→care, memo→mood
@@ -1800,6 +2270,8 @@ function App() {
   const saveCare  =useCallback(async nx=>{setCareR(nx);await dbSet(K.care,nx);},[]);
   const saveBody  =useCallback(async nx=>{setBodyR(nx);await dbSet(K.body,nx);},[]);
   const saveBodyC =useCallback(async nx=>{setBodyC(nx);await dbSet(K.bodyC,nx);},[]);
+  const saveLife  =useCallback(async nx=>{setLifeR(nx);await dbSet(K.life,nx);},[]);
+  const saveLifeC =useCallback(async nx=>{setLifeC(nx);await dbSet(K.lifeC,nx);},[]);
   const saveMemo  =useCallback(async nx=>{setMemoR(nx);await dbSet(K.memo,nx);},[]);
   const saveMood  =useCallback(async nx=>{setMoodR(nx);await dbSet(K.mood,nx);},[]);
   const saveTagC  =useCallback(async nx=>{setTagConf(nx);await dbSet(K.tagC,nx);},[]);
@@ -1848,6 +2320,8 @@ function App() {
     if(data.care_r!==undefined){setCareR(data.care_r||{});await dbSet(K.care,data.care_r||{});}
     if(data.body_r!==undefined){setBodyR(data.body_r||{});await dbSet(K.body,data.body_r||{});}
     if(data.body_c!==undefined){setBodyC(data.body_c||{});await dbSet(K.bodyC,data.body_c||{});}
+    if(data.life_r!==undefined){setLifeR(data.life_r||{});await dbSet(K.life,data.life_r||{});}
+    if(data.life_c!==undefined){const n=normLifeConf(data.life_c);setLifeC(n);await dbSet(K.lifeC,n);}
     if(data.memo_r!==undefined){setMemoR(data.memo_r||{});await dbSet(K.memo,data.memo_r||{});}
     if(data.mood_r!==undefined){setMoodR(data.mood_r||{});await dbSet(K.mood,data.mood_r||{});}
     if(data.tag_c!==undefined){setTagConf(data.tag_c||defaultTagConf());await dbSet(K.tagC,data.tag_c||defaultTagConf());}
@@ -1856,14 +2330,14 @@ function App() {
     // 復元直後はバックアップ催促を出さない（最終バックアップ日時を今に更新）
     setBackupDue(false);await saveSets({lastBackup:Date.now()});
   },[saveSets]);
-  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setSkinR({});setCareR({});setBodyR({});setBodyC({});setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.skin,{}),dbSet(K.care,{}),dbSet(K.body,{}),dbSet(K.bodyC,{}),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
+  const handleDeleteAll=useCallback(async()=>{const emp=defaultMedConf();setBathR({});setMedR({});setMedC(emp);setMealR({});setTeethR({});setSkinR({});setCareR({});setBodyR({});setBodyC({});setLifeR({});setLifeC(defaultLifeConf());setMemoR({});setMoodR({});await Promise.all([dbSet(K.bath,{}),dbSet(K.med,{}),dbSet(K.medC,emp),dbSet(K.meal,{}),dbSet(K.teeth,{}),dbSet(K.skin,{}),dbSet(K.care,{}),dbSet(K.body,{}),dbSet(K.bodyC,{}),dbSet(K.life,{}),dbSet(K.lifeC,defaultLifeConf()),dbSet(K.memo,{}),dbSet(K.mood,{})]);},[]); 
 
   if(!loaded)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"rgba(0,0,0,0.3)"}}>読み込み中…</span></div>;
 
   const mainTabs=tabOrder.filter(t=>!hiddenTabs.includes(t));
   const isSecondary=SECONDARY_TABS.includes(tab);
   const activeTab=([...mainTabs,...SECONDARY_TABS]).includes(tab)?tab:(mainTabs[0]||"settings");
-  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,skin_r:skinR,care_r:careR,body_r:bodyR,body_c:bodyC,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
+  const allData={bath_r:bathR,med_r:medR,med_c:medC,meal_r:mealR,teeth_r:teethR,teeth_c:teethConf,skin_r:skinR,care_r:careR,body_r:bodyR,body_c:bodyC,life_r:lifeR,life_c:lifeC,memo_r:memoR,mood_r:moodR,tag_c:tagConf};
 
   // タイトルタップ：セカンダリタブからメインタブへ
   const handleTitleTap=()=>{if(isSecondary){const t=mainTabs.find(t=>t===tab)||mainTabs[0]||DEFAULT_TAB_ORDER[0];changeTab(t);}};
@@ -1898,10 +2372,11 @@ function App() {
       {activeTab==="meal"     &&<MealTab     records={mealR}  onUpdate={saveMeal} dateNav={dateNav}/>}
       {activeTab==="care"     &&<CareTab     careR={careR} onCare={saveCare} dateNav={dateNav}/>}
       {activeTab==="body"     &&<BodyTab     records={bodyR} conf={bodyC} onUpdate={saveBody} dateNav={dateNav}/>}
+      {activeTab==="life"     &&<LifeTab     records={lifeR} conf={lifeC} onUpdate={saveLife} dateNav={dateNav}/>}
       {activeTab==="mood"     &&<MoodTab     records={moodR}  tagConf={tagConf} onUpdate={saveMood} memoR={memoR} onMemoUpdate={saveMemo} dateNav={dateNav}/>}
-      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} bodyC={bodyC} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
-      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} moodR={moodR}/>}
-      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} tagConf={tagConf} onTagConfChange={saveTagC} bodyC={bodyC} onBodyConfChange={saveBodyC} bodyR={bodyR} onBodyUpdate={saveBody} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
+      {activeTab==="timeline" &&<TimelineTab bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} bodyC={bodyC} lifeR={lifeR} lifeC={lifeC} memoR={memoR} moodR={moodR} tagConf={tagConf} teethConf={teethConf}/>}
+      {activeTab==="stats"    &&<StatsTab    bathR={bathR} medR={medR} medConf={medC} mealR={mealR} teethR={teethR} skinR={skinR} careR={careR} bodyR={bodyR} lifeR={lifeR} lifeC={lifeC} moodR={moodR} tabOrder={tabOrder}/>}
+      {activeTab==="settings" &&<SettingsTab tabOrder={tabOrder} onTabOrderChange={changeTabOrder} hiddenTabs={hiddenTabs} onToggleHidden={toggleHidden} medConfig={medC} onMedConfigChange={saveMedC} tagConf={tagConf} onTagConfChange={saveTagC} bodyC={bodyC} onBodyConfChange={saveBodyC} bodyR={bodyR} onBodyUpdate={saveBody} lifeC={lifeC} onLifeConfChange={saveLifeC} allData={allData} onImport={handleImport} onDeleteAll={handleDeleteAll} onBackedUp={markBackedUp}/>}
       {periodNotice&&(
         <div style={{position:"fixed",left:0,right:0,bottom:backupDue?"auto":0,top:backupDue?0:"auto",zIndex:9998,display:"flex",alignItems:"center",gap:10,
           padding:backupDue?"calc(13px + env(safe-area-inset-top)) 16px 13px":"13px 16px calc(13px + env(safe-area-inset-bottom))",background:"rgba(255,255,255,0.97)",
